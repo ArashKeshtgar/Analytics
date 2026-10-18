@@ -2,7 +2,9 @@
 
 The token is checked (RS256 signature against ClinicHub's JWKS, issuer, expiry, and the audience
 when one is configured); nothing from it is logged. Permissions and the clinic come from the
-claims `permission` and `clinic_slug`.
+claims `permission` and `clinic_slug`. ClinicHub sends an application its own permissions without
+the prefix (`dashboard.view`); they are kept here with it (`analytics:dashboard.view`), so either
+form is read.
 """
 
 from dataclasses import dataclass
@@ -17,6 +19,7 @@ from analytics.settings import Settings
 DASHBOARD_VIEW = "analytics:dashboard.view"
 GROUP_VIEW = "analytics:group.view"
 MODELS_VIEW = "analytics:models.view"
+PREFIX = "analytics:"
 
 
 class Unauthorized(Exception):
@@ -45,6 +48,17 @@ class Scope:
 
     group: bool
     clinic_slug: str | None
+
+
+def _permissions(value: Any) -> frozenset[str]:
+    """ClinicHub's form (`dashboard.view`) and the prefixed one, as `analytics:dashboard.view`."""
+    keys = _as_list(value)
+    # Another application's key (`labflow:admin`) is not ours: dropped, not renamed.
+    return frozenset(
+        p if p.startswith(PREFIX) else PREFIX + p
+        for p in keys
+        if ":" not in p or p.startswith(PREFIX)
+    )
 
 
 def _as_list(value: Any) -> list[str]:
@@ -86,7 +100,7 @@ class TokenVerifier:
             sub=str(claims["sub"]),
             name=name if isinstance(name, str) else None,
             clinic_slug=clinic if isinstance(clinic, str) and clinic else None,
-            permissions=frozenset(_as_list(claims.get("permission"))),
+            permissions=_permissions(claims.get("permission")),
         )
 
 

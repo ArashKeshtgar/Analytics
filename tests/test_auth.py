@@ -231,6 +231,21 @@ def test_permissions_may_be_one_string(app_client: TestClient, clinichub: FakeCl
     assert app_client.get("/api/finance/revenue", headers=bearer(both)).status_code == 200
 
 
+def test_permissions_as_clinichub_sends_them_without_the_prefix(
+    app_client: TestClient, clinichub: FakeClinicHub
+) -> None:
+    # What ClinicHub puts in a token for the `analytics` client: its own keys, prefix removed.
+    token = clinichub.token(permission="dashboard.view", clinic_slug="harbourview")
+    me = app_client.get("/api/me", headers=bearer(token)).json()
+    assert me["scope"] == "clinic" and me["permissions"] == [DASHBOARD]
+    assert app_client.get("/api/finance/revenue", headers=bearer(token)).status_code == 200
+    group = clinichub.token(permission=["dashboard.view", "group.view", "models.view"])
+    assert app_client.get("/api/me", headers=bearer(group)).json()["scope"] == "group"
+    # A key of another application, prefixed or not, is no Analytics permission.
+    other = clinichub.token(permission=["labflow:admin", "admin"], clinic_slug="harbourview")
+    assert app_client.get("/api/me", headers=bearer(other)).json()["scope"] == "none"
+
+
 # ---- /api/me and CORS --------------------------------------------------------------------------
 
 

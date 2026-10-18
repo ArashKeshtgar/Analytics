@@ -10,9 +10,9 @@ from collections.abc import Iterator
 
 import pytest
 
-from analytics.auth import TokenVerifier
+from analytics.auth import DASHBOARD_VIEW, TokenVerifier
 from tests.conftest import make_settings
-from tests.fake_idp import DASHBOARD, FakeIdP
+from tests.fake_idp import FakeIdP
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -80,7 +80,7 @@ def test_the_right_verifier_gets_tokens_the_api_accepts(idp: FakeIdP, tmp_path: 
 
     settings = make_settings(tmp_path, oidc_issuer=idp.issuer, oidc_jwks_uri=idp.jwks_uri)  # type: ignore[arg-type]
     user = TokenVerifier(settings).verify(str(tokens["access_token"]))
-    assert user.clinic_slug == "harbourview" and DASHBOARD in user.permissions
+    assert user.clinic_slug == "harbourview" and DASHBOARD_VIEW in user.permissions
 
 
 def test_a_wrong_verifier_is_refused_and_a_code_works_once(idp: FakeIdP) -> None:

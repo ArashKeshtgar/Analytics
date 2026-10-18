@@ -21,9 +21,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 KEY_ID = "idp-key"
-GROUP = "analytics:group.view"
-DASHBOARD = "analytics:dashboard.view"
-MODELS = "analytics:models.view"
+# As ClinicHub sends them to the `analytics` client: its own keys without the prefix.
+GROUP = "group.view"
+DASHBOARD = "dashboard.view"
+MODELS = "models.view"
 
 USERS: dict[str, dict[str, Any]] = {
     "group": {"sub": "u-group", "name": "Grace Group", "permission": [GROUP, MODELS]},
