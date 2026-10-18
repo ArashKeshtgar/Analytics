@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # A batch is written, then acknowledged: at most this many events, or this many seconds.
     consume_batch_size: int = 200
     consume_flush_seconds: float = 5.0
+    # `analytics schedule` (phase 6): how often `analytics run` runs, e.g. 30m, 6h, 1d.
+    run_every: str = "6h"
 
     @property
     def effective_jwks_uri(self) -> str:

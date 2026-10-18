@@ -24,13 +24,15 @@ uv run analytics extract finance  # needs ANALYTICS_FINANCE_CONNECTION_STRING
 uv run analytics consume --drain  # read IntegrationHub's events from RabbitMQ (without --drain: keep running)
 uv run analytics build            # raw -> data/warehouse.duckdb -> dbt models and tests
 uv run analytics score            # forecasts with backtests and remittance anomalies -> schema ml
+uv run analytics run              # all of it into a copy of the warehouse, swapped in when it worked, plus a report in data/runs/
+uv run analytics schedule         # run now and every ANALYTICS_RUN_EVERY (6h)
 ```
 
 The dashboard (phase 3) is in `web/` ([web/README.md](web/README.md)): `cd web && npm ci && npm run dev` on :5601,
 signed in through ClinicHub.
 
 Checks before committing: `uv run ruff check`, `uv run ruff format --check`, `uv run mypy src`, `uv run pytest`.
-Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used from phase 1).
+Images: `docker build -t analytics .` and `docker build -t analytics-web web` (both in CI); the platform compose is ControlPanel's `compose.apps.yml` (includes the SQL Server ODBC driver, used from phase 1).
 
 ## Status
 
@@ -40,6 +42,6 @@ Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used 
 - [x] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
 - [x] Phase 4 — operations from IntegrationHub events: turnaround, cancellations
 - [x] Phase 5 — revenue forecasts and remittance anomalies, with backtests and model cards ([docs/models](docs/models)); not yet run on real books
-- [ ] Phase 6 — scheduled runs, data-quality report, platform compose
+- [x] Phase 6 — `analytics run` / `analytics schedule`, a data-quality report per run (`/api/meta/runs`), images in CI, ControlPanel compose; the extract there waits for FinancePowerApp's `analytics_reader` login
 
 All data in tests and samples is synthetic.

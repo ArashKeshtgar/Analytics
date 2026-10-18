@@ -54,7 +54,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**, except the comparison with FinancePowerApp's own reports (see below) |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**, except the optional LabFlow `dw` source |
 | 5 | Forecasts and anomalies, with backtests and model cards | **Done**, not yet run on real books (one month in FinancePowerApp) |
-| 6 | Scheduling, data-quality checks, platform compose | Not started |
+| 6 | Scheduling, data-quality checks, platform compose | **Done**; seen in ControlPanel's compose, extract not configured there (no `analytics_reader` login yet) |
 
 Each phase ends with tests green in CI, this table and the README's status list updated. Changes needed in other
 repositories are listed per phase; they are made there, in their own commits, and noted here.
@@ -378,6 +378,49 @@ the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no
 - `analytics run` = extract + build + score, scheduled (cron in the container, or the platform's scheduler).
 - Data-quality report after each run (row counts vs last run, failed dbt tests) at `GET /api/meta/runs`.
 - Join the platform compose (ControlPanel); Docker image built in CI.
+
+**Built:**
+
+- `analytics run` (`pipeline.py`): prepare, extract (skipped, and said so, without
+  `ANALYTICS_FINANCE_CONNECTION_STRING`), build, score, replace. The live warehouse is **never built in place**: the run
+  copies it to `data/next/warehouse.duckdb` (same file name: dbt-duckdb names the database after it), works there and
+  replaces the live file only when every step worked, so the dashboard keeps the last good data during and after a
+  failed run, and the API's reads never meet dbt's writes. A step that fails stops the run with its exception type and
+  first line (never a connection string). Exit code 1 for a failed run.
+- `analytics schedule [--every 6h]` (`ANALYTICS_RUN_EVERY`, e.g. 30m, 6h, 1d): a run now and then every interval from
+  the start of the previous one; a broken run does not end it; stops on Ctrl+C or SIGTERM (a container's stop). A loop
+  in the process rather than cron: the image needs nothing more, and the platform restarts it.
+- **Data-quality report** per run, a JSON file in `data/runs/` (outside the warehouse, so a failed run is reported too):
+  the steps with their time and result, the row count of every `raw` and `main` table against the last run that
+  replaced the warehouse, the dbt tests and models that did not pass (from dbt's `run_results.json`, cleared before each
+  build so an old file is never read), and checks: a failed test or model is an error, a table that emptied or lost more
+  than 20% of at least 10 rows is a warning, a failed step is an error. Status `ok`, `warning` (replaced, with
+  warnings) or `failed` (not replaced).
+- `GET /api/meta/runs?limit=20` (1-200): the reports, newest first; the whole warehouse, so `group.view` only.
+- The API answers 503 "being updated" when it cannot open the warehouse because another process writes it.
+- Images: `Dockerfile` (API; the same image runs `analytics schedule` and `analytics consume`; commands from the
+  environment directly, `uv run` re-synced at every start) and **`web/Dockerfile`** (the Vite build behind nginx, which
+  proxies `/api` to `ANALYTICS_API_URL`, so the page calls its own origin; header buffers raised because on localhost
+  the browser sends ClinicHub's cookies to every port). Both built in CI (job `images`).
+- **ControlPanel** (`compose.apps.yml` there): `analytics-api`, `analytics-scheduler`, `analytics-web` and, with
+  `--profile events`, `analytics-consumer`, sharing the `analytics-data` volume; web on 127.0.0.1:5601. Seen working on
+  this machine: the dashboard signed in through ClinicHub on the host, a run in the scheduler's container built,
+  scored and swapped the warehouse in, and `/api/meta/runs` listed it with the failed runs before it.
+- Tests: 13 (a run end to end on the synthetic source twice, the comparison with the last good run, a failed run keeping
+  the warehouse, the skipped extract, nothing extracted ever, the checks, dbt's results, the endpoint and its
+  permission, the API while another process holds the warehouse, intervals, the commands, the schedule surviving a
+  broken run).
+
+**Not built or not known, said plainly:**
+
+- **No extract in ControlPanel yet:** FinancePowerApp has no `analytics_reader` login (phase 1's open item), so the
+  scheduler there runs and fails every interval with "no finance extract yet". Create the login, then set
+  `ANALYTICS_FINANCE_CONNECTION_STRING` in ControlPanel's `.env`.
+- No page for the run reports; they are an API for now (and ControlPanel shows the containers' state, not the reports).
+- No alert when a run fails: the report and the scheduler's log say so, nobody is told.
+- Old reports and old finance extracts are never deleted; the open-item history is rebuilt from the extracts, so they are
+  kept on purpose, but `data/` grows by one extract per run.
+- The consumer in ControlPanel needs a RabbitMQ the container can reach with a real account (not `guest`, see phase 4).
 
 ## Not in scope
 

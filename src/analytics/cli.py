@@ -1,4 +1,8 @@
+import re
+import signal
 import threading
+import time
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import typer
@@ -7,6 +11,8 @@ import uvicorn
 from analytics.events import ConsumerError, run_forever
 from analytics.events import consume as consume_events
 from analytics.extract import extract_finance
+from analytics.pipeline import Report, describe_failure
+from analytics.pipeline import run as run_pipeline
 from analytics.scoring import ScoreError
 from analytics.scoring import score as score_warehouse
 from analytics.settings import get_settings
@@ -81,6 +87,61 @@ def score() -> None:
         f"too short {run.too_short} (need 18 months)"
     )
     typer.echo(f"  remittance: {run.scored} provider-months scored, {run.flagged} flagged")
+
+
+def print_report(report: Report) -> None:
+    typer.echo(f"Run {report.run_id}: {report.status}")
+    for step in report.steps:
+        detail = f" - {step.detail}" if step.detail else ""
+        typer.echo(f"  {step.name:<8} {step.status:<8} {step.seconds:>7.1f} s{detail}")
+    for check in report.checks:
+        typer.echo(f"  {check.level}: {check.subject}: {check.message}")
+
+
+@app.command()
+def run() -> None:
+    """Extract, build and score into a copy of the warehouse, swap it in, and write a report."""
+    report = run_pipeline(get_settings())
+    print_report(report)
+    if report.status == "failed":
+        raise typer.Exit(code=1)
+
+
+def parse_every(text: str) -> timedelta:
+    """30m, 6h, 1d (or a combination such as 1h30m); at least a minute."""
+    parts = re.fullmatch(r"\s*(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*", text.lower())
+    if not parts or not any(parts.groups()):
+        raise typer.BadParameter(f"{text!r}: use a duration such as 30m, 6h or 1d")
+    d, h, m = (int(g or 0) for g in parts.groups())
+    every = timedelta(days=d, hours=h, minutes=m)
+    if every < timedelta(minutes=1):
+        raise typer.BadParameter("at least 1m")
+    return every
+
+
+@app.command()
+def schedule(
+    every: Annotated[str | None, typer.Option(help="Defaults to ANALYTICS_RUN_EVERY (6h).")] = None,
+) -> None:
+    """Run `analytics run` now and then every interval, until stopped (Ctrl+C or SIGTERM)."""
+    settings = get_settings()
+    interval = parse_every(every or settings.run_every)
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    typer.echo(f"Running every {interval}; stop with Ctrl+C.")
+    try:
+        while not stop.is_set():
+            started = time.monotonic()
+            try:
+                print_report(run_pipeline(settings))
+            except Exception as exc:  # a broken run must not end the schedule
+                typer.echo(f"run failed: {describe_failure(exc)}", err=True)
+            wait = max(0.0, interval.total_seconds() - (time.monotonic() - started))
+            nxt = datetime.now(UTC) + timedelta(seconds=wait)
+            typer.echo(f"Next run at {nxt:%Y-%m-%d %H:%M} UTC.")
+            stop.wait(wait)
+    except KeyboardInterrupt:
+        pass
 
 
 @app.command()

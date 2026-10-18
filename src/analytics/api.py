@@ -16,6 +16,7 @@ from analytics.auth import (
     User,
     scope_for,
 )
+from analytics.pipeline import load_reports
 from analytics.settings import Settings, get_settings
 
 # groupBy value -> select expression. Fixed list: nothing from the request goes into SQL text.
@@ -102,7 +103,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def query(sql: str, params: list[Any]) -> list[dict[str, Any]]:
         if not config.warehouse_path.is_file():
             raise HTTPException(503, "The warehouse is not built yet. Run `analytics build`.")
-        con = duckdb.connect(str(config.warehouse_path), read_only=True)
+        try:
+            con = duckdb.connect(str(config.warehouse_path), read_only=True)
+        except duckdb.IOException as exc:
+            # `analytics run` is swapping in a new warehouse (or a manual build is writing it).
+            raise HTTPException(
+                503, "The warehouse is being updated; try again in a moment."
+            ) from exc
         try:
             cursor = con.execute(sql, params)
             names = [c[0] for c in cursor.description]
@@ -387,6 +394,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "group by 1, 2, 3, 4 order by 1, 2, 3"
         )
         return query(sql, [*cte_params, side, *filter_params])
+
+    @app.get("/api/meta/runs")
+    def runs(
+        scope: Annotated[Scope, Depends(current_scope)],
+        limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    ) -> list[dict[str, Any]]:
+        """The latest `analytics run` reports, newest first: steps, row counts against the last good
+        run, dbt tests that did not pass, warnings. The whole warehouse: group users only."""
+        if not scope.group:
+            raise HTTPException(403, "Run reports are for the group permission.")
+        return load_reports(config)[:limit]
 
     @app.get("/api/finance/ohip-anomalies")
     def ohip_anomalies(

@@ -15,6 +15,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src src
 COPY dbt dbt
 RUN uv sync --frozen --no-dev
-ENV ANALYTICS_HOST=0.0.0.0
+# The environment's own commands: `uv run` would sync (and compile) again at every start.
+ENV ANALYTICS_HOST=0.0.0.0 PATH=/app/.venv/bin:$PATH
 EXPOSE 5600
-CMD ["uv", "run", "--no-dev", "analytics", "serve"]
+# The same image runs the scheduler (`analytics schedule`) and the consumer (`analytics consume`).
+CMD ["analytics", "serve"]
