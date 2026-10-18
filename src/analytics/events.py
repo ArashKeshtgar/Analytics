@@ -188,7 +188,8 @@ def write_batch(
 
 
 def _sync(path: Path) -> None:
-    with path.open("rb") as handle:
+    # Writable: on Windows fsync of a read-only handle fails with EBADF.
+    with path.open("r+b") as handle:
         os.fsync(handle.fileno())
 
 
@@ -212,10 +213,21 @@ Writer = Callable[[Settings, list[dict[str, Any]], list[dict[str, Any]]], None]
 
 
 def ensure_topology(channel: BlockingChannel, settings: Settings) -> None:
-    """Declare what IntegrationHub declares, the same way (durable, no arguments): idempotent."""
-    channel.exchange_declare(
-        exchange=settings.rabbitmq_exchange, exchange_type="topic", durable=True
-    )
+    """Declare the queue and its binding as IntegrationHub does (durable, no arguments): idempotent.
+
+    The exchange is the hub's: it is only checked (passive), so the Analytics account needs no
+    configure permission on it. Permissions: configure and write on the queue (binding is a write
+    on the queue), read on the queue and the exchange.
+    """
+    try:
+        channel.exchange_declare(exchange=settings.rabbitmq_exchange, passive=True)
+    except pika.exceptions.ChannelClosedByBroker as e:
+        if e.reply_code == 404:
+            raise ConsumerError(
+                f"the exchange {settings.rabbitmq_exchange} does not exist yet: IntegrationHub "
+                "creates it when it starts with HUB_EVENTS_ENABLED=true"
+            ) from None
+        raise
     channel.queue_declare(queue=settings.rabbitmq_queue, durable=True)
     channel.queue_bind(
         queue=settings.rabbitmq_queue, exchange=settings.rabbitmq_exchange, routing_key="#"
@@ -244,6 +256,14 @@ def consume(
         ensure_topology(channel, settings)
         channel.basic_qos(prefetch_count=settings.consume_batch_size)
         _loop(channel, settings, result, drain, stop, writer)
+    except pika.exceptions.ChannelClosedByBroker as e:
+        # The reply text names the account; only the code is shown.
+        if e.reply_code == 403:
+            raise ConsumerError(
+                "RabbitMQ refused access (403): the account needs configure, write and read on "
+                f"{settings.rabbitmq_queue} and read on {settings.rabbitmq_exchange}"
+            ) from None
+        raise ConsumerError(f"RabbitMQ failed (channel closed, {e.reply_code})") from None
     except pika.exceptions.AMQPError as e:
         raise ConsumerError(f"RabbitMQ failed ({type(e).__name__})") from None
     finally:

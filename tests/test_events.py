@@ -381,6 +381,55 @@ def test_declaring_the_queue_again_changes_nothing(hub: Hub) -> None:
     assert hub.waiting() == 2
 
 
+QUEUE_ONLY = r"^analytics\.clinical-events$"
+QUEUE_AND_EXCHANGE = r"^(analytics\.clinical-events|clinical\.events)$"
+
+
+def account(rabbit: RabbitMqContainer, name: str, configure: str, write: str, read: str) -> str:
+    """A RabbitMQ account other than guest (which only works from the broker's own host)."""
+    for command in (
+        ["rabbitmqctl", "add_user", name, "pw-" + name],
+        ["rabbitmqctl", "set_permissions", "-p", "/", name, configure, write, read],
+    ):
+        exit_code, output = rabbit.exec(command)
+        assert exit_code == 0, output
+    return (
+        f"amqp://{name}:pw-{name}@{rabbit.get_container_host_ip()}:{rabbit.get_exposed_port(5672)}/"
+    )
+
+
+def test_the_documented_account_is_enough_and_needs_nothing_on_the_exchange_but_read(
+    hub: Hub, rabbit: RabbitMqContainer
+) -> None:
+    url = account(rabbit, "analytics-ok", QUEUE_ONLY, QUEUE_ONLY, QUEUE_AND_EXCHANGE)
+    hub.publish(good())
+
+    result = consume(hub.settings.model_copy(update={"rabbitmq_url": url}), drain=True)
+
+    assert result.stored == 1 and hub.waiting() == 0
+
+
+def test_without_write_on_the_queue_the_binding_is_refused_with_a_plain_message(
+    hub: Hub, rabbit: RabbitMqContainer
+) -> None:
+    url = account(rabbit, "analytics-nowrite", QUEUE_ONLY, "", QUEUE_AND_EXCHANGE)
+
+    with pytest.raises(ConsumerError) as caught:
+        consume(hub.settings.model_copy(update={"rabbitmq_url": url}), drain=True)
+
+    assert "refused access (403)" in str(caught.value)
+    assert "analytics-nowrite" not in str(caught.value) and "pw-" not in str(caught.value)
+
+
+def test_before_the_hub_has_made_the_exchange_the_error_says_so(hub: Hub) -> None:
+    settings = hub.settings.model_copy(
+        update={"rabbitmq_exchange": "not.yet.declared", "rabbitmq_queue": "analytics.not-yet"}
+    )
+
+    with pytest.raises(ConsumerError, match="HUB_EVENTS_ENABLED=true"):
+        consume(settings, drain=True)
+
+
 def test_an_unreachable_broker_is_an_error_that_does_not_show_the_url_or_password(
     tmp_path: Path,
 ) -> None:

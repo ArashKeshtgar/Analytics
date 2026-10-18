@@ -299,10 +299,27 @@ Depends on IntegrationHub phase 3 (the `clinical.events` feed, schema in its `do
 
 1. ClinicHub: tick the README item "Clinic operations dashboard". The Operations page is open to every `dashboard.view`
    user of the clinic and to `group.view`.
-2. RabbitMQ: a real account for Analytics (the development `guest` only works from the same host). It needs to
-   configure and read `analytics.clinical-events` and read from the `clinical.events` exchange.
+2. RabbitMQ: a real account for Analytics (the development `guest` only works from the same host). Done on the
+   development broker (IntegrationHub's `compose.yml`), see [The RabbitMQ account](#the-rabbitmq-account) below.
 3. IntegrationHub must be running with `HUB_EVENTS_ENABLED=true` for any events to exist; until Analytics first starts
    the hub's own declared queue keeps what is published.
+
+#### The RabbitMQ account
+
+`analytics consume` only checks that the exchange exists (passive declare): the exchange is IntegrationHub's, so
+Analytics needs no configure permission on it. It declares its queue and binds it, and **binding is a write on the
+queue**, so the account needs write there too (tested: without it the broker refuses the binding with 403).
+
+```bash
+docker compose exec rabbitmq rabbitmqctl add_user analytics '<password>'
+docker compose exec rabbitmq rabbitmqctl set_permissions -p / analytics \
+  '^analytics\.clinical-events$' '^analytics\.clinical-events$' '^(analytics\.clinical-events|clinical\.events)$'
+```
+
+(configure, write, read). Then `ANALYTICS_RABBITMQ_URL=amqp://analytics:<password>@<broker>:5672/`. The exchange
+appears when the hub publishes its first event; before that the consumer says so and stops (`--drain`) or retries.
+IntegrationHub in a container needs an account of its own for the same reason (configure and write on both, read on
+the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no batch could be written there; fixed.
 
 ### Phase 5 — Forecasts and anomalies
 
