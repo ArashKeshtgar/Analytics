@@ -6,6 +6,8 @@ export interface Series {
   label: string;
   color: string;
   values: (number | null)[];
+  /** Drawn dashed (a projection), in the legend too: identity is not left to color alone. */
+  dashed?: boolean;
 }
 
 export interface TipRow {
@@ -100,7 +102,7 @@ export function Legend({
   onToggle,
   kind = 'bar',
 }: {
-  items: { id: string; label: string; color: string }[];
+  items: { id: string; label: string; color: string; dashed?: boolean }[];
   hidden: Set<string>;
   onToggle(id: string): void;
   kind?: 'bar' | 'line';
@@ -111,7 +113,10 @@ export function Legend({
       {items.map((item) => (
         <li key={item.id}>
           <button type="button" aria-pressed={!hidden.has(item.id)} onClick={() => onToggle(item.id)}>
-            <span className={`swatch${kind === 'line' ? ' line' : ''}`} style={{ background: item.color }} />
+            <span
+              className={`swatch${kind === 'line' ? ' line' : ''}${item.dashed ? ' dashed' : ''}`}
+              style={item.dashed ? { color: item.color } : { background: item.color }}
+            />
             {item.label}
           </button>
         </li>

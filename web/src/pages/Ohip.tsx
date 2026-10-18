@@ -1,4 +1,4 @@
-import type { OhipProviderRow, OhipRow } from '../api/types';
+import type { OhipAnomaly, OhipProviderRow, OhipRow } from '../api/types';
 import { Card, Empty, Notice } from '../components/Card';
 import { ColumnChart } from '../components/charts/ColumnChart';
 import { LineChart } from '../components/charts/LineChart';
@@ -13,10 +13,11 @@ export function Ohip() {
   const { range } = useDashboard();
   const collection = useFinance<OhipRow[]>('/api/finance/ohip-collection');
   const providers = useFinance<OhipProviderRow[]>('/api/finance/ohip-providers');
-  const error = collection.error ?? providers.error;
+  const anomalies = useFinance<OhipAnomaly[]>('/api/finance/ohip-anomalies');
+  const error = collection.error ?? providers.error ?? anomalies.error;
   if (error) return <p className="error">{error}</p>;
-  if (!collection.data || !providers.data) return <p className="empty">Loading…</p>;
-  const stale = collection.loading || providers.loading;
+  if (!collection.data || !providers.data || !anomalies.data) return <p className="empty">Loading…</p>;
+  const stale = collection.loading || providers.loading || anomalies.loading;
   const months = ohipByMonth(collection.data, range);
   const billed = sum(months.map((m) => m.billed));
   if (billed === 0 && providers.data.length === 0) return <Empty>No OHIP claims in the selected months.</Empty>;
@@ -120,6 +121,44 @@ export function Ohip() {
           rows: providers.data.map((p) => ({ ...p })),
         }}
       />
+      {anomalies.data.length > 0 ? (
+        <Card
+          title="Unusual months"
+          subtitle="A provider's short-paid or refused rate far above the same provider's earlier months"
+          stale={stale}
+          table={{
+            csvName: `ohip-unusual-months-${range.to.slice(0, 7)}`,
+            columns: [
+              { key: 'month', label: 'Month' },
+              { key: 'provider', label: 'Provider' },
+              { key: 'measure', label: 'What' },
+              { key: 'rate', label: 'Rate', numeric: true, format: (v) => percent(v as number) },
+              { key: 'usual_rate', label: 'Usual rate', numeric: true, format: (v) => percent(v as number) },
+              { key: 'amount', label: 'Amount', numeric: true, format: money2 },
+              { key: 'billed', label: 'Billed', numeric: true, format: money2 },
+              { key: 'z', label: 'How far (z)', numeric: true },
+              { key: 'history_months', label: 'Earlier months', numeric: true },
+            ],
+            rows: anomalies.data.map((a) => ({
+              month: monthLabel(a.month),
+              provider: a.provider,
+              measure: a.measure === 'refused' ? 'Refused' : 'Short-paid',
+              rate: a.rate,
+              usual_rate: a.usual_rate,
+              amount: a.amount,
+              billed: a.billed,
+              z: a.z == null ? 'Never varied before' : a.z.toFixed(1),
+              history_months: a.history_months,
+            })),
+          }}
+        />
+      ) : (
+        <Notice>
+          No provider-month stands out in these months. A month is flagged when its short-paid or refused rate is far
+          above the provider&apos;s own earlier months (robust z-score of 3.5 or more, at least 2 points higher, on $500 or
+          more billed); it needs six earlier months and a run of <code>analytics score</code>.
+        </Notice>
+      )}
       <Notice>
         Days to pay is not shown: receivable items carry no payment date. “Paid” is by business, not by provider. The
         monthly figures are by the date of the receivable item, the provider table by the month the journal was posted,

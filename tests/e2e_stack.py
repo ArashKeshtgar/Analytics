@@ -9,7 +9,7 @@ has something to show. Numbers the browser tests expect are in web/e2e/dashboard
 import sys
 import tempfile
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
@@ -17,6 +17,7 @@ import uvicorn
 
 from analytics.api import create_app
 from analytics.extract import extract_finance
+from analytics.scoring import score
 from analytics.settings import Settings
 from analytics.sources import DuckDbSource
 from analytics.warehouse import build
@@ -55,6 +56,8 @@ def build_warehouse(root: Path) -> Settings:
     synthetic_events.store_events(settings, synthetic_events.all_events())
     if build(settings) != 0:
         raise SystemExit("the warehouse did not build")
+    # Forecasts: two months of books is too short for every series, which the page says.
+    score(settings, as_of=date(2026, 11, 15))
     return settings
 
 

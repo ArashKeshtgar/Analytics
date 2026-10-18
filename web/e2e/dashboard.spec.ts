@@ -317,6 +317,25 @@ test.describe('group', () => {
   });
 });
 
+test.describe('forecast', () => {
+  test('the group user with the models permission sees why nothing is forecast yet', async ({ page }) => {
+    await signInAs(page, 'group');
+    await page.getByRole('link', { name: 'Forecast' }).click();
+    await expect(page).toHaveURL('http://localhost:5601/forecast');
+    await expect(page.getByText(/a forecast needs 18/).first()).toBeVisible();
+    const short = page.locator('section.card', { hasText: 'Not forecast yet' });
+    await expect(short.locator('tbody tr').first()).toContainText('Harbourview Clinic');
+    // A forecast has its own months: no period presets.
+    await expect(page.getByRole('button', { name: 'Last 12 months' })).toHaveCount(0);
+  });
+
+  test('a clinic user without it has no Forecast page', async ({ page }) => {
+    await signInAs(page, 'clinic');
+    await expect(page.getByRole('link', { name: 'OHIP' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Forecast' })).toHaveCount(0);
+  });
+});
+
 test.describe('CSV', () => {
   test('every table downloads as CSV with raw numbers', async ({ page }) => {
     await signInAs(page, 'group');

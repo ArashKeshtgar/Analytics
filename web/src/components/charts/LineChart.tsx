@@ -13,19 +13,30 @@ interface Props {
   axis?: AxisKind;
   ariaLabel: string;
   height?: number;
+  /** A range around one series (e.g. a forecast's band): a light tint of that series' color. */
+  band?: Band;
+}
+
+export interface Band {
+  seriesId: string;
+  label: string;
+  lower: (number | null)[];
+  upper: (number | null)[];
 }
 
 const BASE_MARGIN = { top: 12, bottom: 28, left: 52 };
 
 /** 2px lines, an end dot with a surface ring, a crosshair that snaps to the nearest position. */
-export function LineChart({ categories, axisLabels, series, format, tickFormat, axis, ariaLabel, height = 260 }: Props) {
+export function LineChart({ categories, axisLabels, series, format, tickFormat, axis, ariaLabel, height = 260, band }: Props) {
   const [ref, width] = useWidth();
   const [hidden, toggle] = useHidden();
   const [index, setIndex] = useState<number | null>(null);
   const all = series.map((s) => s.id);
   const shown = series.filter((s) => !hidden.has(s.id));
 
-  const values = shown.flatMap((s) => s.values.filter((v): v is number => v != null));
+  const bandSeries = band ? shown.find((s) => s.id === band.seriesId) : undefined;
+  const bandValues = bandSeries && band ? [...band.lower, ...band.upper].filter((v): v is number => v != null) : [];
+  const values = [...shown.flatMap((s) => s.values.filter((v): v is number => v != null)), ...bandValues];
   const scale = niceScale(Math.min(0, ...values), Math.max(0, ...values), 4, axis);
   const tick = tickFormat ?? compact;
 
@@ -65,6 +76,16 @@ export function LineChart({ categories, axisLabels, series, format, tickFormat, 
     return d;
   }
 
+  /** The band as one closed shape over the positions where both of its edges are known. */
+  function bandPath(): string {
+    if (!band) return '';
+    const at = categories.map((_, i) => i).filter((i) => band.lower[i] != null && band.upper[i] != null);
+    if (at.length === 0) return '';
+    const top = at.map((i, k) => `${k === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(band.upper[i] as number).toFixed(1)}`);
+    const bottom = [...at].reverse().map((i) => `L${x(i).toFixed(1)},${y(band.lower[i] as number).toFixed(1)}`);
+    return `${top.join('')}${bottom.join('')}Z`;
+  }
+
   const nearest = (clientX: number, rect: DOMRect) => {
     if (categories.length <= 1) return 0;
     const px = ((clientX - rect.left) / rect.width) * width - BASE_MARGIN.left;
@@ -87,11 +108,22 @@ export function LineChart({ categories, axisLabels, series, format, tickFormat, 
           x: x(index),
           y: Math.min(...shown.map((s) => (s.values[index] == null ? height : y(s.values[index] as number)))) - 10,
           title: categories[index] ?? '',
-          rows: shown.map((s) => ({
-            color: s.color,
-            label: s.label,
-            value: s.values[index] == null ? '–' : format(s.values[index] as number),
-          })),
+          rows: [
+            ...shown.map((s) => ({
+              color: s.color,
+              label: s.label,
+              value: s.values[index] == null ? '–' : format(s.values[index] as number),
+            })),
+            ...(bandSeries && band && band.lower[index] != null && band.upper[index] != null
+              ? [
+                  {
+                    color: bandSeries.color,
+                    label: band.label,
+                    value: `${format(band.lower[index] as number)} – ${format(band.upper[index] as number)}`,
+                  },
+                ]
+              : []),
+          ],
         };
 
   return (
@@ -115,7 +147,8 @@ export function LineChart({ categories, axisLabels, series, format, tickFormat, 
               </text>
             ) : null,
           )}
-          {shown.length === 1 && shown[0] && (
+          {bandSeries && <path className="band" d={bandPath()} fill={bandSeries.color} opacity={0.16} />}
+          {shown.length === 1 && shown[0] && !band && (
             <path
               d={`${pathFor(shown[0])}L${x(categories.length - 1)},${y(0)}L${x(0)},${y(0)}Z`}
               fill={shown[0].color}
@@ -123,7 +156,16 @@ export function LineChart({ categories, axisLabels, series, format, tickFormat, 
             />
           )}
           {shown.map((s) => (
-            <path key={s.id} d={pathFor(s)} fill="none" stroke={s.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              key={s.id}
+              d={pathFor(s)}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={s.dashed ? '6 5' : undefined}
+            />
           ))}
           {ends.map(({ s, p }) => {
             const point = p as { i: number; v: number };

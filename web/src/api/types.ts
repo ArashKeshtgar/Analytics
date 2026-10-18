@@ -90,3 +90,56 @@ export interface HstRow {
   measure: HstMeasure;
   amount: number;
 }
+
+/** /api/models/revenue-forecast: the latest `analytics score` run. */
+export interface ForecastRun {
+  runId: string;
+  createdUtc: string;
+  /** The last complete month the models saw. */
+  dataThrough: string;
+}
+
+export interface Backtest {
+  model: string;
+  origins: number;
+  horizon: number;
+  mae: number | null;
+  mape: number | null;
+  mase: number | null;
+  chosen: boolean;
+}
+
+export interface ForecastSeries {
+  business: string;
+  business_name: string;
+  line_of_business: string;
+  status: 'forecast' | 'too-short';
+  model: string | null;
+  months: number;
+  first_month: string;
+  backtests: Backtest[];
+  history: { month: string; revenue: number }[];
+  forecast: { month: string; forecast: number; lower: number; upper: number }[];
+}
+
+export interface ForecastResponse {
+  run: ForecastRun | null;
+  series: ForecastSeries[];
+}
+
+/** /api/finance/ohip-anomalies: a flagged provider-month and the numbers behind the flag. */
+export interface OhipAnomaly {
+  business: string;
+  provider: string;
+  month: string;
+  measure: 'short_paid' | 'refused';
+  billed: number;
+  amount: number;
+  rate: number;
+  usual_rate: number;
+  spread: number;
+  /** Null when the earlier months never varied (then above_steady_history is true). */
+  z: number | null;
+  above_steady_history: boolean;
+  history_months: number;
+}

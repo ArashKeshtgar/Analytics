@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { monthLabel } from '../lib/format';
 import { PRESETS } from '../lib/periods';
+import { MODELS_VIEW } from '../pages/Forecast';
 import { useDashboard } from '../state/Dashboard';
 
 type Theme = 'system' | 'light' | 'dark';
@@ -54,15 +55,19 @@ function FilterBar() {
   const { preset, setPreset, business, setBusiness, businesses, me, lastMonth } = useDashboard();
   const { pathname } = useLocation();
   const showBusiness = me.scope === 'group' && pathname !== '/group' && businesses.length > 1;
+  // The forecast has its own months (the models' history and the six ahead): the presets do not apply.
+  const showPresets = pathname !== '/forecast';
   return (
     <div className="filters" role="group" aria-label="Filters">
-      <div className="presets">
-        {PRESETS.map((p) => (
-          <button key={p.id} type="button" className="btn" aria-pressed={preset === p.id} onClick={() => setPreset(p.id)}>
-            {p.label}
-          </button>
-        ))}
-      </div>
+      {showPresets && (
+        <div className="presets">
+          {PRESETS.map((p) => (
+            <button key={p.id} type="button" className="btn" aria-pressed={preset === p.id} onClick={() => setPreset(p.id)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
       {showBusiness && (
         <label>
           Business
@@ -91,6 +96,7 @@ export function Layout() {
     { to: '/hst', label: 'HST' },
     { to: '/operations', label: 'Operations' },
     ...(me.scope === 'group' ? [{ to: '/group', label: 'Group' }] : []),
+    ...(me.permissions.includes(MODELS_VIEW) ? [{ to: '/forecast', label: 'Forecast' }] : []),
   ];
   return (
     <div className="app">

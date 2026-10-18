@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth/AuthProvider';
 import { Layout } from './components/Layout';
+import { Forecast } from './pages/Forecast';
 import { Group } from './pages/Group';
 import { Hst } from './pages/Hst';
 import { Ohip } from './pages/Ohip';
@@ -52,6 +53,7 @@ export default function App() {
               <Route path="hst" element={<Hst />} />
               <Route path="operations" element={<Operations />} />
               <Route path="group" element={<Group />} />
+              <Route path="forecast" element={<Forecast />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

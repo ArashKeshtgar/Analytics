@@ -23,6 +23,7 @@ curl localhost:5600/healthz
 uv run analytics extract finance  # needs ANALYTICS_FINANCE_CONNECTION_STRING
 uv run analytics consume --drain  # read IntegrationHub's events from RabbitMQ (without --drain: keep running)
 uv run analytics build            # raw -> data/warehouse.duckdb -> dbt models and tests
+uv run analytics score            # forecasts with backtests and remittance anomalies -> schema ml
 ```
 
 The dashboard (phase 3) is in `web/` ([web/README.md](web/README.md)): `cd web && npm ci && npm run dev` on :5601,
@@ -38,7 +39,7 @@ Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used 
 - [x] Phase 2 — sign-in through ClinicHub, clinic-scoped access — API done; web sign-in comes with the web (phase 3)
 - [x] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
 - [x] Phase 4 — operations from IntegrationHub events: turnaround, cancellations
-- [ ] Phase 5 — revenue forecasts and remittance anomalies, with backtests
+- [x] Phase 5 — revenue forecasts and remittance anomalies, with backtests and model cards ([docs/models](docs/models)); not yet run on real books
 - [ ] Phase 6 — scheduled runs, data-quality report, platform compose
 
 All data in tests and samples is synthetic.

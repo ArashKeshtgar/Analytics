@@ -53,7 +53,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**, except the comparison with FinancePowerApp's own reports (see below) |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**, except the optional LabFlow `dw` source |
-| 5 | Forecasts and anomalies, with backtests and model cards | Not started |
+| 5 | Forecasts and anomalies, with backtests and model cards | **Done**, not yet run on real books (one month in FinancePowerApp) |
 | 6 | Scheduling, data-quality checks, platform compose | Not started |
 
 Each phase ends with tests green in CI, this table and the README's status list updated. Changes needed in other
@@ -333,6 +333,45 @@ the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no
 - **Remittance anomalies:** short-paid / refused rate per provider and month against its own history (robust z-score);
   flagged on the OHIP page with the numbers behind the flag.
 - A model card per model in `docs/models/` (data, period, metrics, limits). No model on patient-level data.
+
+**Built:**
+
+- `analytics score` (`scoring.py`): reads the built marts, writes schema `ml` and keeps every run (`ml.run`,
+  `ml.forecast_series`, `ml.backtest`, `ml.forecast`, `ml.remittance_score`). Only complete months: the month of the
+  latest finance extract may not be finished, so the data ends the month before. `analytics run` (phase 6) will chain
+  extract, build and score.
+- **Revenue forecast** (`forecast.py`, card [docs/models/revenue-forecast.md](models/revenue-forecast.md)): per
+  business and line of business, six months ahead. Candidates seasonal naive (the baseline), ETS (damped trend,
+  season from 24 months), SARIMA(0,1,1)(0,1,1)12 from 30 months, gradient boosting on lags and calendar features from
+  24 months. Rolling-origin backtest over the latest six origins with a six-month horizon; MAE, MAPE and MASE per run
+  in `ml.backtest`; the lowest MASE wins, the baseline unless another model is strictly better. A series needs 18
+  complete months; a shorter one is listed as too short, with no forecast. The band is the 80th percentile of the
+  chosen model's backtest errors, said on the page to be rough, not a probability.
+- **Remittance anomalies** (`anomalies.py`, card [docs/models/remittance-anomalies.md](models/remittance-anomalies.md)):
+  short-paid and refused rate per provider and month against the provider's own **earlier** months (robust z-score,
+  MAD, at least six months of history). Flagged when z is 3.5 or more, the rate at least 2 points above the usual one
+  and at least $500 billed; only a higher rate. Lines without a billing number are not scored.
+- API: `GET /api/models/revenue-forecast` (`analytics:models.view` **and** the usual business scope: a clinic's
+  user sees their clinic's series); `GET /api/finance/ohip-anomalies` (the OHIP page's scope, `from`, `to`,
+  `business`). Both answer empty before the first run.
+- Web: a **Forecast** page (in the menu only with `models.view`): the series picker, revenue and the six months
+  ahead with the band (dashed forecast line, also in the legend), tiles, every model's backtest, the series that are
+  too short and why, a table twin and CSV for each. The period presets are hidden there. The **OHIP** page lists
+  "Unusual months" with the rate, the usual rate, the amount, z and the months of history, or says how a month would
+  be flagged. The line chart can now draw a dashed series and a band.
+- Tests: 21 for the models and the rules, 7 for `score` (on a hand-built warehouse with four years of synthetic
+  revenue, and on the marts dbt builds), 5 for the API (permission, scope, the numbers, before the first run);
+  10 in Vitest; 2 in the browser.
+
+**Not built or not known, said plainly:**
+
+- **Not run on real books.** FinancePowerApp holds October 2026 only, the month of the extract, so on this machine
+  `analytics score` finds no complete month: no series, no forecast, no anomaly. Nothing has been checked against real
+  revenue or remittances; the thresholds are conventional starting points.
+- The forecast chart with a real forecast is covered by Vitest only: the browser test's data (two months) is too short,
+  so in the browser only the "too short" path is seen.
+- No reconciliation of the businesses' forecasts to a group total; no holidays or fee-schedule changes as inputs.
+- Nothing schedules `analytics score` (phase 6).
 
 ### Phase 6 — Operations of the service
 

@@ -142,6 +142,7 @@ button, select, input { font: inherit; color: inherit; }
 .legend button[aria-pressed='false'] { opacity: 0.45; text-decoration: line-through; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .swatch.line { height: 2px; border-radius: 1px; width: 16px; }
+.swatch.line.dashed { background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 8px); }
 
 .chart { position: relative; width: 100%; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }

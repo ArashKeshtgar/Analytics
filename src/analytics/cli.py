@@ -7,6 +7,8 @@ import uvicorn
 from analytics.events import ConsumerError, run_forever
 from analytics.events import consume as consume_events
 from analytics.extract import extract_finance
+from analytics.scoring import ScoreError
+from analytics.scoring import score as score_warehouse
 from analytics.settings import get_settings
 from analytics.sources import SqlServerSource
 from analytics.warehouse import build as build_warehouse
@@ -63,6 +65,22 @@ def consume(
 def build() -> None:
     """Load the raw extracts into data/warehouse.duckdb and run dbt (models and tests)."""
     raise typer.Exit(code=build_warehouse(get_settings()))
+
+
+@app.command()
+def score() -> None:
+    """Revenue forecasts (with backtests) and remittance anomalies into schema `ml`."""
+    try:
+        run = score_warehouse(get_settings())
+    except ScoreError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(f"Run {run.run_id}, complete months through {run.data_through:%Y-%m}")
+    typer.echo(
+        f"  revenue series: {run.series}, forecast {run.forecasts}, "
+        f"too short {run.too_short} (need 18 months)"
+    )
+    typer.echo(f"  remittance: {run.scored} provider-months scored, {run.flagged} flagged")
 
 
 @app.command()

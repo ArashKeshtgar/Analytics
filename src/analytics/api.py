@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from analytics import __version__
 from analytics.auth import (
+    MODELS_VIEW,
     Forbidden,
     Scope,
     TokenVerifier,
@@ -74,6 +75,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return scope_for(user)
         except Forbidden as exc:
             raise HTTPException(403, "No permission to view finance data.") from exc
+
+    def models_scope(user: Annotated[User, Depends(current_user)]) -> Scope:
+        """Model pages: `models.view`, and the same business scope as the rest."""
+        if MODELS_VIEW not in user.permissions:
+            raise HTTPException(403, "No permission to view models.")
+        return current_scope(user)
+
+    def latest_run() -> dict[str, Any] | None:
+        """The latest `analytics score` run, or None before the first one."""
+        found = query(
+            "select count(*) as n from information_schema.tables "
+            "where table_schema = 'ml' and table_name = 'run'",
+            [],
+        )
+        if not found[0]["n"]:
+            return None
+        runs = query(
+            'select run_id as "runId", created_utc as "createdUtc", '
+            'data_through as "dataThrough" from ml.run '
+            "order by created_utc desc, run_id desc limit 1",
+            [],
+        )
+        return runs[0] if runs else None
 
     def query(sql: str, params: list[Any]) -> list[dict[str, Any]]:
         if not config.warehouse_path.is_file():
@@ -363,6 +387,96 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "group by 1, 2, 3, 4 order by 1, 2, 3"
         )
         return query(sql, [*cte_params, side, *filter_params])
+
+    @app.get("/api/finance/ohip-anomalies")
+    def ohip_anomalies(
+        scope: Annotated[Scope, Depends(current_scope)],
+        business: str | None = None,
+        from_: Annotated[date | None, Query(alias="from")] = None,
+        to: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Provider-months whose short-paid or refused rate is far above the provider's own earlier
+        months (latest `analytics score` run), with the numbers behind each flag. Empty before the
+        first run."""
+        run = latest_run()
+        if run is None:
+            return []
+        where, params = _filters("s", scope, business, from_, to)
+        where = (where + " and " if where else "where ") + "s.run_id = ? and s.flagged"
+        sql = (
+            "select b.code as business, s.provider, s.month, s.measure, s.billed, s.amount, "
+            "round(s.rate, 4) as rate, round(s.usual_rate, 4) as usual_rate, "
+            "round(s.spread, 4) as spread, round(s.z, 1) as z, "
+            "s.above_any_spread as above_steady_history, s.history_months "
+            "from ml.remittance_score s join main.dim_business b using (business_id) "
+            f"{where} order by s.month desc, b.code, s.provider, s.measure"
+        )
+        return query(sql, [*params, run["runId"]])
+
+    @app.get("/api/models/revenue-forecast")
+    def revenue_forecast(
+        scope: Annotated[Scope, Depends(models_scope)],
+        business: str | None = None,
+    ) -> dict[str, Any]:
+        """The latest run's revenue series in the caller's scope: status, the chosen model, every
+        candidate's backtest, the months used and the next six months with a rough band."""
+        run = latest_run()
+        if run is None:
+            return {"run": None, "series": []}
+        rid = run["runId"]
+        where, params = _filters("f", scope, business, None, None)
+        where = (where + " and " if where else "where ") + "f.run_id = ?"
+        series = query(
+            "select f.business_id, b.code as business, b.name as business_name, "
+            "f.line_of_business, f.status, f.model, f.months, f.first_month "
+            "from ml.forecast_series f join main.dim_business b using (business_id) "
+            f"{where} order by b.code, f.line_of_business",
+            [*params, rid],
+        )
+        if not series:
+            return {"run": run, "series": []}
+        ids = sorted({s["business_id"] for s in series})
+        marks = ", ".join("?" for _ in ids)
+        tests = query(
+            "select business_id, line_of_business, model, origins, horizon, round(mae, 2) as mae, "
+            "round(mape, 1) as mape, round(mase, 3) as mase, chosen from ml.backtest "
+            f"where run_id = ? and business_id in ({marks}) order by mase nulls last, model",
+            [rid, *ids],
+        )
+        ahead = query(
+            "select business_id, line_of_business, month, round(forecast, 2) as forecast, "
+            "round(lower, 2) as lower, round(upper, 2) as upper from ml.forecast "
+            f"where run_id = ? and business_id in ({marks}) order by month",
+            [rid, *ids],
+        )
+        history = query(
+            "select business_id, line_of_business, month, "
+            "round(sum(revenue), 2)::double as revenue "
+            f"from main.mart_revenue_monthly where business_id in ({marks}) and month <= ? "
+            "group by 1, 2, 3 order by 3",
+            [*ids, run["dataThrough"]],
+        )
+
+        def of(rows: list[dict[str, Any]], s: dict[str, Any]) -> list[dict[str, Any]]:
+            key = (s["business_id"], s["line_of_business"])
+            return [
+                {k: v for k, v in r.items() if k not in ("business_id", "line_of_business")}
+                for r in rows
+                if (r["business_id"], r["line_of_business"]) == key
+            ]
+
+        return {
+            "run": run,
+            "series": [
+                {
+                    **{k: v for k, v in s.items() if k != "business_id"},
+                    "backtests": of(tests, s),
+                    "history": of(history, s),
+                    "forecast": of(ahead, s),
+                }
+                for s in series
+            ],
+        }
 
     return app
 
