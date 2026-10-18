@@ -161,11 +161,11 @@ exits with code 2 and says it is not built (phase 1). Not yet seen running: the 
 - The web's sign-in (authorization code + PKCE, `/signin-oidc`): there is no web yet. It is the first item of phase 3.
 - `analytics:models.view` is recognised (and shown by `/api/me`) but guards nothing: the model pages are phase 5.
 - No revocation or session handling: a token is good until it expires; the keys are cached by PyJWT (5 minutes).
-- Never run against a real ClinicHub token (see the questions in sources.md).
+- Run against a real ClinicHub token on 2026-10-18 (answers in sources.md).
 
-**Other repositories — to do locally, not done:** the ClinicHub change in the item above, and in addition that the
-`analytics` client's access tokens must carry the claims `permission` and `clinic_slug` (OpenIddict only puts a claim
-in the token if it has the `access_token` destination; check how `labflow:*` and `clinic_slug` get there).
+**Other repositories — done** (ClinicHub `c71b3bd`): the client `analytics`, the three permissions (Administrator: all;
+Physician: `dashboard.view`), and its access tokens carry `permission`, `clinic_slug` and `name`. ClinicHub sends the
+permissions **without** the prefix (`dashboard.view`); Analytics reads both forms since `6ba4c5a`.
 
 ### Phase 3 — Dashboard
 
@@ -220,14 +220,11 @@ in the token if it has the `access_token` destination; check how `labflow:*` and
   `vite preview` (the platform compose is phase 6), a Docker image of the web.
 - Not seen working with the real ClinicHub.
 
-**Other repositories — to do locally, not done** (in addition to phase 2's list):
-
-1. ClinicHub: the `analytics` client must be a **public** client (no secret) allowed the authorization code flow with
-   PKCE, with redirect `http://localhost:5601/signin-oidc` and post-logout `http://localhost:5601/`.
-2. ClinicHub: the browser calls the discovery document, the JWKS and **`/connect/token`** directly, so ClinicHub must
-   allow CORS from `http://localhost:5601` on those endpoints. Without it the page cannot sign in.
-3. ClinicHub: which scopes may the client ask for? The page asks for `openid profile` (`VITE_OIDC_SCOPE`); the
-   access token must carry `permission`, `clinic_slug` and `name`.
+**Other repositories — done** (ClinicHub `c71b3bd`, seen working on 2026-10-18): `analytics` is a public client (code
+flow with PKCE, redirect `http://localhost:5601/signin-oidc`); ClinicHub allows CORS from the origins a client lists
+(`CorsOrigins`) on discovery, keys, token and userinfo only; `openid profile` is enough, the access token carries
+`permission`, `clinic_slug` and `name`. A physician signed in, saw Harbourview only and no Group page; the
+administrator saw every business. Note: this machine's Node 20.12 is too old for Vite 8 (needs 20.19+).
 
 ### Phase 4 — Operations
 

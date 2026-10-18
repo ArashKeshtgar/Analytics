@@ -232,6 +232,20 @@ client (the part between the dots, base64url, without the signature).
 4. Claim `name`: the display name. [Used only for `/api/me`.]
 5. `aud` of an access token for the `analytics` client. [Unknown: not checked until `ANALYTICS_OIDC_AUDIENCE` is set.]
 
+**Answered by a real token** (2026-10-18, ClinicHub `c71b3bd`, a physician and the administrator at Harbourview), header
+and payload without the signature, values shortened:
+
+```json
+{"alg": "RS256", "typ": "at+jwt"}
+{"iss": "http://localhost:5301/", "client_id": "analytics", "sub": "…", "name": "Dr. Nadia Patel",
+ "clinic_slug": "harbourview", "permission": "dashboard.view", "exp": …}
+```
+
+1. `RS256`, `typ: at+jwt`. 2. A string for one, an array for several, and **without the prefix** (`dashboard.view`,
+`group.view`, `models.view`): ClinicHub gives each application its own keys that way. Both forms are read.
+3. `clinic_slug` is there for every user, the administrator's included (the clinic they chose). 4. `name` is the display
+name. 5. **No `aud`**: leave `ANALYTICS_OIDC_AUDIENCE` empty; `client_id` is `analytics`.
+
 ## Questions from phase 3 (the dashboard)
 
 Phase 3 assumed the answer in brackets.
