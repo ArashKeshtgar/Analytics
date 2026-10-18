@@ -188,3 +188,20 @@ CREATE TABLE dbo.AccountingPeriods (
     ClosedDate datetime NULL
 );
 ```
+
+## Open questions for FinancePowerApp (answer here, from the repository; phase 1 assumed the answer in brackets)
+
+1. What is the `org.EntitySource.Source` value for ClinicHub's clinics? [`clinichub`, compared case-insensitively;
+   it gives `dim_business.clinic_slug`.]
+2. When an entry is reversed, is the original entry set to `Reversed` and the reversal entry `Posted`? [Yes: both are
+   kept in `fact_gl_line` and net to zero; only `Draft` is left out.]
+3. Do the lines of `Adjustment.Refused` / `Adjustment.ShortPaid` carry the payer's `PartyId` (OHIP)? [Yes:
+   `mart_ohip_collection` counts only lines whose party is of type OHIP. If they do not, refused and short-paid show 0.]
+4. Are those adjustments posted to the accounts that `gl.CategoryMap` maps for those categories, and are those
+   revenue-type accounts (contra-revenue)? [Yes: they then reduce `mart_revenue_monthly`, which is the stated meaning.]
+5. Is `Department` always set on revenue lines? [Used as the line of business; `Unassigned` when empty.]
+6. Is there a payment date anywhere (`ar.Item` has only `Paid`, no date)? Without it **days to pay is not built**.
+   A payments table, or the journal entry that cleared the item, would give it.
+7. What does `/api/reports/trial-balance` return (fields, rounding)? The cross-check test against a recorded
+   answer is **not built** until a sample answer is pasted here.
+

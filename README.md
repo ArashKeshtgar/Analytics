@@ -19,7 +19,8 @@ uv sync
 cp .env.example .env
 uv run analytics serve            # API on :5600
 curl localhost:5600/healthz
-uv run analytics build            # dbt on data/warehouse.duckdb
+uv run analytics extract finance  # needs ANALYTICS_FINANCE_CONNECTION_STRING
+uv run analytics build            # raw -> data/warehouse.duckdb -> dbt models and tests
 ```
 
 Checks before committing: `uv run ruff check`, `uv run ruff format --check`, `uv run mypy src`, `uv run pytest`.
@@ -28,7 +29,7 @@ Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used 
 ## Status
 
 - [x] Phase 0 — skeleton, CLI, CI, Docker
-- [ ] Phase 1 — finance warehouse from FinancePowerApp, dbt marts, API
+- [x] Phase 1 — finance warehouse from FinancePowerApp, dbt marts, API
 - [ ] Phase 2 — sign-in through ClinicHub, clinic-scoped access
 - [ ] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
 - [ ] Phase 4 — operations from IntegrationHub events: turnaround, cancellations

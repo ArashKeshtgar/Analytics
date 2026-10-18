@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: dim_business
+    columns:
+      - name: business_id
+        data_tests: [unique, not_null]
+  - name: dim_account
+    columns:
+      - name: account_id
+        data_tests: [unique, not_null]
+  - name: dim_period
+    columns:
+      - name: period_id
+        data_tests: [unique, not_null]
+  - name: dim_party
+    columns:
+      - name: party_id
+        data_tests: [unique, not_null]
+  - name: fact_gl_line
+    columns:
+      - name: journal_line_id
+        data_tests: [unique, not_null]
+      - name: business_id
+        data_tests:
+          - not_null
+          - relationships: {to: ref('dim_business'), field: business_id}
+      - name: account_id
+        data_tests:
+          - not_null
+          - relationships: {to: ref('dim_account'), field: account_id}
+  - name: fact_open_item_snapshot
+    columns:
+      - name: business_id
+        data_tests:
+          - relationships: {to: ref('dim_business'), field: business_id}

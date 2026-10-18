@@ -12,16 +12,15 @@ from analytics.cli import app
 runner = CliRunner()
 
 
-def test_extract_finance_is_honest_about_not_being_built() -> None:
-    result = runner.invoke(app, ["extract", "finance"])
-    assert result.exit_code == 2
-
-
-def test_build_runs_dbt_on_the_empty_project(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("ANALYTICS_WAREHOUSE_PATH", str(tmp_path / "w.duckdb"))
+def test_build_without_an_extract_exits_with_one(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("ANALYTICS_DATA_DIR", str(tmp_path))
-    result = runner.invoke(app, ["build"])
-    assert result.exit_code == 0, result.output
+    monkeypatch.setenv("ANALYTICS_WAREHOUSE_PATH", str(tmp_path / "w.duckdb"))
+    assert runner.invoke(app, ["build"]).exit_code == 1
+
+
+def test_extract_finance_needs_a_connection_string(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("ANALYTICS_FINANCE_CONNECTION_STRING", "")
+    assert runner.invoke(app, ["extract", "finance"]).exit_code == 2
 
 
 def test_serve_answers_on_a_port() -> None:

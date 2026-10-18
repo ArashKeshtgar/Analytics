@@ -12,6 +12,7 @@ dependencies = [
     "polars>=1.12",
     "dbt-core>=1.9",
     "dbt-duckdb>=1.9",
+    "pyodbc>=5.3.0",
 ]
 
 [dependency-groups]
@@ -46,3 +47,10 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/synthetic_source.py" = ["E501"]  # SQL fixtures
+
+[[tool.mypy.overrides]]
+module = ["pyodbc"]
+ignore_missing_imports = true

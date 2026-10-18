@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: Parquet extracts of FinancePowerApp, loaded by `analytics build`.
+    tables:
+      - name: org_entity
+      - name: org_entitysource
+      - name: org_party
+      - name: tax_taxcode
+      - name: gl_account
+      - name: gl_journalentry
+      - name: gl_journalline
+      - name: gl_categorymap
+      - name: gl_controlmap
+      - name: ar_item
+      - name: ap_item
+      - name: dbo_accountingperiods
+      - name: ar_item_history
+      - name: ap_item_history

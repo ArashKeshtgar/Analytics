@@ -49,7 +49,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | Phase | What | Status |
 |---|---|---|
 | 0 | Skeleton: package, CLI, health, CI, Docker | **Done** |
-| 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | Not started |
+| 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
 | 2 | Sign-in through ClinicHub, clinic-scoped access | Not started |
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | Not started |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | Not started |
@@ -95,6 +95,36 @@ exits with code 2 and says it is not built (phase 1). Not yet seen running: the 
   checked by hand-computed expectations.
 - **Other repositories:** FinancePowerApp — a script `database/050_analytics_reader.sql` creating the read-only login
   and grants (made there).
+
+**Built:**
+
+- `analytics extract finance` (pyodbc, read-only connection) writes `data/raw/finance/{run}/{table}.parquet` and
+  logs the run in `meta.load_run` / `meta.load_run_table` (a failed run is logged with the error type and first
+  line only). Columns are listed one by one in `finance_tables.py`; free text, staff names, contact details and
+  document references are not extracted (a test enforces this).
+- `analytics build` loads the Parquet runs into schema `raw` (current tables from the latest run; an open-item
+  history with one snapshot per day, rebuilt from the runs kept on disk) and runs `dbt build`. It exits 1 when there
+  is no extract yet.
+- dbt: `stg_*`, `dim_business`, `dim_account`, `dim_period`, `dim_party`, `fact_gl_line`, `fact_open_item_snapshot`,
+  `mart_revenue_monthly`, `mart_ohip_collection`; tests: unique/not-null/relationships, every entry balances, every
+  business balances.
+- API: `GET /api/finance/revenue` (`business`, `from`, `to`, `groupBy` = comma list of
+  `month|business|lineOfBusiness|provider`), `/api/finance/ohip-collection`, `/api/finance/aging` (`business`,
+  `asOf`, `side`). Amounts are returned as numbers rounded to cents.
+- `docs/finance-reader.sql`: the read-only login (to be copied to FinancePowerApp as `database/050_analytics_reader.sql`).
+
+**Not built, said plainly:**
+
+- Incremental extract: every run is a full copy (FinancePowerApp's entries change status and items change balance, so
+  "newer than" would miss updates). Fine at this size; revisit if a table grows.
+- Days to pay in `mart_ohip_collection` (no payment date in the source, question 6 in sources.md).
+- The cross-check of the trial balance against `/api/reports/trial-balance` (question 7). What exists is the
+  internal check that every entry and every business balances.
+- Ageing history only starts at the first extract; days without a run have no snapshot.
+- No sign-in: the API is open and meant for localhost until phase 2.
+- Not run against a real SQL Server: `SqlServerSource` and `docs/finance-reader.sql` are untested; tests use a
+  DuckDB database with FinancePowerApp's table names and columns as the synthetic source.
+- Several mart rules rest on assumptions about FinancePowerApp (sources.md, questions 1–5).
 
 ### Phase 2 — Sign-in through ClinicHub
 
