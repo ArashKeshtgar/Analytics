@@ -220,3 +220,18 @@ client (the part between the dots, base64url, without the signature).
 4. Claim `name`: the display name. [Used only for `/api/me`.]
 5. `aud` of an access token for the `analytics` client. [Unknown: not checked until `ANALYTICS_OIDC_AUDIENCE` is set.]
 
+## Questions from phase 3 (the dashboard)
+
+Phase 3 assumed the answer in brackets.
+
+1. HST: the accounts of subtype `TaxPayable` hold the HST collected and `TaxRecoverable` the ITCs, and the tax lines
+   carry the same `TaxCode` as the line they tax. [Yes. A tax line without a code shows as "(none)".]
+2. Which lines make up each GST34 line (101, 103, 106, …), and is the filing period a month or a quarter? [Not
+   mapped: the page shows sales and purchases by tax code and the two tax totals, by month or quarter.] A recorded
+   answer of FinancePowerApp's `/api/reports/hst` for a period is needed to compare.
+3. OHIP billed by provider: the revenue accounts mapped to `OHIP.Professional`, `OHIP.Technical` and
+   `OHIP.Reciprocal` (gl.CategoryMap) carry the provider's billing number in `ProviderCode`. [Yes; lines without one
+   are "none".] And the `Adjustment.*` lines carry the provider too? [Not in the test data: they show under "none".]
+4. Is a month with receivables but no revenue possible (it would not give the dashboard a "latest month")? [The latest
+   month with revenue is taken as the latest month with data.]
+

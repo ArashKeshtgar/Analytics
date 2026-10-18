@@ -51,6 +51,8 @@ testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/synthetic_source.py" = ["E501"]  # SQL fixtures
+"tests/e2e_stack.py" = ["E501"]  # SQL fixtures
+"tests/fake_idp.py" = ["E501"]
 
 [[tool.mypy.overrides]]
 module = ["pyodbc"]

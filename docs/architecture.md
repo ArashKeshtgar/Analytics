@@ -51,7 +51,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 0 | Skeleton: package, CLI, health, CI, Docker | **Done** |
 | 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
 | 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
-| 3 | Dashboard web: revenue, OHIP collection, receivables, HST | Not started |
+| 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**, except the comparison with FinancePowerApp's own reports (see below) |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | Not started |
 | 5 | Forecasts and anomalies, with backtests and model cards | Not started |
 | 6 | Scheduling, data-quality checks, platform compose | Not started |
@@ -175,6 +175,59 @@ in the token if it has the `access_token` destination; check how `labflow:*` and
   period, matching FinancePowerApp's report), **Group** (businesses side by side, `group.view` only).
 - CSV download on every table. Numbers on the dashboard match FinancePowerApp's own reports for the same period —
   a test checks one of each.
+
+**Built:**
+
+- `web/`: React 19 + Vite + TypeScript. Sign-in is the authorization code flow with PKCE against ClinicHub (client
+  `analytics`, redirect `/signin-oidc`, library `oidc-client-ts`); the token is kept in the tab's session storage; an
+  expired token or a `401` sends the user through sign-in again and back to the same page. Permissions come from
+  `/api/me`, not from reading the token. Sign-out clears the tab's session only (it does not end the ClinicHub session).
+- One filter row above everything: Last 12 / 6 / 3 months, Year to date, Last year (counted back from the **latest month
+  with data**, not from today) and, for group users, the business. A reload keeps the previous render, dimmed.
+- **Overview**: the one hero figure (revenue of the latest month and the change against the same month a year earlier),
+  revenue by line of business (this month against a year earlier) and a monthly line with the year-earlier line.
+  **OHIP**: billed, paid, outstanding, refused and short-paid rate; billed and paid by month; the two rates by month; a
+  by-provider table. **Receivables** (and payables): ageing buckets per payer type as a stacked bar, on the last
+  snapshot up to the end of the range. **HST**: sales by tax code, HST collected, ITCs and net tax by month or quarter.
+  **Group** (`analytics:group.view` only): businesses side by side.
+- Every chart has a table twin (the Chart / Table switch) and every table downloads as CSV (raw numbers, quoted
+  per RFC 4180, a text cell that starts with `=`, `+`, `-` or `@` is neutralised, UTF-8 with a byte order mark).
+- Charts: hand-written SVG; marks at most 24 px, rounded at the data end, a 2 px gap between neighbours; one tooltip
+  with every series, also on keyboard focus and arrow keys; legend for two or more series that hides a series (never
+  the last); hover lifts the mark; colours follow the entity (categorical slots 1 and 2, a gray for "a year
+  earlier", a five-step one-hue ramp for the ageing buckets). The palette was run through the validator
+  (light and dark): slots 1–3 pass all-pairs; slot 3 (aqua) is below 3:1 on the light surface, so it is not used; the
+  ageing ramps pass as ordinal. Dark mode follows the system and can be set with the toggle (remembered in this browser).
+- API additions the pages needed: `GET /api/finance/businesses`, `/range`, `/ohip-providers`, `/hst`, and dbt models
+  `mart_hst_period` and `mart_ohip_provider_monthly`, all clinic-scoped like the rest. Staging now casts nullable text
+  columns: an all-NULL column (no tax code posted yet) is typed "null" in Parquet and broke the models.
+- Tests: 76 in Vitest (formats, CSV, periods, the data shaping, chart paths and tooltips, the API client, the
+  reload hook, the filter-to-request mapping), 24 in a real browser (Playwright: sign-in with PKCE against a fake
+  ClinicHub that refuses a wrong verifier, expiry, each page's numbers worked out by hand, filters, CSV download,
+  dark mode, no horizontal scroll at 390 px, no console errors), and 17 more Python tests (the new endpoints and
+  marts, an all-NULL source column, the fake sign-in).
+
+**Not built, said plainly:**
+
+- **"Numbers match FinancePowerApp's own reports — a test checks one of each" is not done.** There is no recorded
+  answer of those reports in this repository and no access to FinancePowerApp. The numbers are checked against
+  hand-computed expectations of the synthetic data only. The HST page is read from the journal and is **not** the
+  GST34 return: no line numbers, the filing period is not known, and it has not been compared with FinancePowerApp's
+  HST report (the page says so). Questions are in sources.md.
+- Days to pay (no payment date in the source) and "paid" by provider.
+- Texture fills for print and forced colors; an automated accessibility audit; screen-reader testing.
+- Silent token renewal, ending the ClinicHub session on sign-out, a production build served by anything but
+  `vite preview` (the platform compose is phase 6), a Docker image of the web.
+- Not seen working with the real ClinicHub.
+
+**Other repositories — to do locally, not done** (in addition to phase 2's list):
+
+1. ClinicHub: the `analytics` client must be a **public** client (no secret) allowed the authorization code flow with
+   PKCE, with redirect `http://localhost:5601/signin-oidc` and post-logout `http://localhost:5601/`.
+2. ClinicHub: the browser calls the discovery document, the JWKS and **`/connect/token`** directly, so ClinicHub must
+   allow CORS from `http://localhost:5601` on those endpoints. Without it the page cannot sign in.
+3. ClinicHub: which scopes may the client ask for? The page asks for `openid profile` (`VITE_OIDC_SCOPE`); the
+   access token must carry `permission`, `clinic_slug` and `name`.
 
 ### Phase 4 — Operations
 

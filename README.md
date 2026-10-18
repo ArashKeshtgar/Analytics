@@ -24,6 +24,9 @@ uv run analytics extract finance  # needs ANALYTICS_FINANCE_CONNECTION_STRING
 uv run analytics build            # raw -> data/warehouse.duckdb -> dbt models and tests
 ```
 
+The dashboard (phase 3) is in `web/` ([web/README.md](web/README.md)): `cd web && npm ci && npm run dev` on :5601,
+signed in through ClinicHub.
+
 Checks before committing: `uv run ruff check`, `uv run ruff format --check`, `uv run mypy src`, `uv run pytest`.
 Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used from phase 1).
 
@@ -32,7 +35,7 @@ Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used 
 - [x] Phase 0 — skeleton, CLI, CI, Docker
 - [x] Phase 1 — finance warehouse from FinancePowerApp, dbt marts, API
 - [x] Phase 2 — sign-in through ClinicHub, clinic-scoped access — API done; web sign-in comes with the web (phase 3)
-- [ ] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
+- [x] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
 - [ ] Phase 4 — operations from IntegrationHub events: turnaround, cancellations
 - [ ] Phase 5 — revenue forecasts and remittance anomalies, with backtests
 - [ ] Phase 6 — scheduled runs, data-quality report, platform compose
