@@ -155,7 +155,7 @@ def test_api_before_the_warehouse_exists(
 
 
 def test_a_source_with_no_tax_codes_or_departments_still_builds(tmp_path: Path) -> None:
-    """Parquet types an all-NULL column as null; staging casts it so the models do not guess integer."""
+    """An all-NULL column is typed null in Parquet; staging casts it, models must not guess."""
     con = synthetic_source.create()
     con.execute("UPDATE gl.JournalLine SET TaxCode = NULL, Department = NULL, ProviderCode = NULL")
     con.execute("UPDATE gl.Account SET Subtype = NULL, GifiCode = NULL")
