@@ -48,7 +48,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Skeleton: package, CLI, health, CI, Docker | Not started |
+| 0 | Skeleton: package, CLI, health, CI, Docker | **Done** |
 | 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | Not started |
 | 2 | Sign-in through ClinicHub, clinic-scoped access | Not started |
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | Not started |
@@ -68,6 +68,10 @@ repositories are listed per phase; they are made there, in their own commits, an
 - `.env.example` with every setting; settings read with pydantic-settings.
 
 **Done when:** `uv run pytest`, `uv run ruff check`, `uv run mypy src` pass in CI and `analytics serve` answers on `:5600`.
+
+**Built:** all of the above. `analytics build` runs dbt on the (empty) project; `analytics extract finance` exists but
+exits with code 2 and says it is not built (phase 1). Not yet seen running: the first CI run on GitHub, and
+`docker build` (see README).
 
 ### Phase 1 — Finance warehouse
 

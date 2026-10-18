@@ -10,9 +10,24 @@ Python 3.12 · FastAPI · DuckDB · dbt · Polars · statsmodels / scikit-learn 
 - Plan and phases: [docs/architecture.md](docs/architecture.md)
 - What it reads: [docs/sources.md](docs/sources.md)
 
+## Run it
+
+Needs Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```
+uv sync
+cp .env.example .env
+uv run analytics serve            # API on :5600
+curl localhost:5600/healthz
+uv run analytics build            # dbt on data/warehouse.duckdb
+```
+
+Checks before committing: `uv run ruff check`, `uv run ruff format --check`, `uv run mypy src`, `uv run pytest`.
+Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used from phase 1).
+
 ## Status
 
-- [ ] Phase 0 — skeleton, CLI, CI, Docker
+- [x] Phase 0 — skeleton, CLI, CI, Docker
 - [ ] Phase 1 — finance warehouse from FinancePowerApp, dbt marts, API
 - [ ] Phase 2 — sign-in through ClinicHub, clinic-scoped access
 - [ ] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
