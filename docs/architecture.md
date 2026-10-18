@@ -295,9 +295,10 @@ Depends on IntegrationHub phase 3 (the `clinical.events` feed, schema in its `do
   Harbourview through IntegrationHub (events on, its own RabbitMQ account) to LabFlow, and cancelled one;
   `analytics consume --drain` (with the `analytics` account) stored 13 events, `analytics build` passed, and the
   Operations page showed 6 placed, 5 waiting, 1 cancelled, 5 routine and 1 stat. That run found that the hub did not
-  recognise ClinicHub's real cancel (a Bundle POSTed to `/fhir`, not a `PUT`), fixed in IntegrationHub. **Turnaround
-  could not be seen**: LabFlow sends results straight to ClinicHub (`ClinicHub:Authority` + `fhir`), not through the
-  hub, so no `result.*` event exists until LabFlow gets a separate results address.
+  recognise ClinicHub's real cancel (a Bundle POSTed to `/fhir`, not a `PUT`), fixed in IntegrationHub. LabFlow then
+  got `ClinicHub:ResultsUrl` (its results had gone straight to ClinicHub); with it pointed at the hub, two released
+  results made `result.final` events and the page showed 2 resulted, median and 90th percentile 42 min, by test,
+  priority and department. Not seen: ClinicReport (diagnostics), amended results, a refused cancel.
 - `patient_pseudonym` is stored in `fact_order` (a later phase may count patients) but no page or endpoint shows it.
 
 **Other repositories — to do locally, not done:**
