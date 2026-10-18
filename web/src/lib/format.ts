@@ -35,6 +35,33 @@ export function monthLabel(iso: string): string {
 /** '2026-10-01' -> 'Oct'. */
 export const monthShort = (iso: string): string => MONTHS[Number(iso.split('-')[1]) - 1] ?? '?';
 
+/** 165 -> '2 h 45 min', 1740 -> '1 d 5 h', 45 -> '45 min'. Minutes in, whole units out. */
+export function duration(minutes: number | null | undefined): string {
+  if (minutes == null) return '–';
+  const total = Math.round(minutes);
+  if (total < 60) return `${total} min`;
+  if (total < 1440) {
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+  let d = Math.floor(total / 1440);
+  let h = Math.round((total % 1440) / 60);
+  if (h === 24) {
+    d += 1;
+    h = 0;
+  }
+  return h ? `${d} d ${h} h` : `${d} d`;
+}
+
+/** Axis ticks of a duration: 0, 30 min, 1.5 h, 2 d. */
+export function durationTick(minutes: number): string {
+  if (minutes === 0) return '0';
+  if (Math.abs(minutes) < 60) return `${+minutes.toFixed(0)} min`;
+  if (Math.abs(minutes) < 1440) return `${+(minutes / 60).toFixed(1)} h`;
+  return `${+(minutes / 1440).toFixed(1)} d`;
+}
+
 /** A change with its sign: +12.5% / −3.0%. */
 export function signedPercent(fraction: number): string {
   const sign = fraction > 0 ? '+' : fraction < 0 ? '−' : '';

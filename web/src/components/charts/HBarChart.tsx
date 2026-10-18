@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { compact } from '../../lib/format';
-import { Legend, niceScale, rowPath, type Series, Tooltip, type TipState, useHidden, useWidth } from './common';
+import { Legend, niceScale, type AxisKind, rowPath, type Series, Tooltip, type TipState, useHidden, useWidth } from './common';
 
 interface Props {
   categories: string[];
@@ -8,6 +8,10 @@ interface Props {
   /** Grouped: one bar per series in each row. Stacked: the series add up to a total. */
   mode: 'grouped' | 'stacked';
   format(value: number): string;
+  /** Format of the axis ticks; defaults to compact numbers. */
+  tickFormat?(value: number): string;
+  /** Whole numbers (counts) or minutes (durations): picks the tick steps. */
+  axis?: AxisKind;
   ariaLabel: string;
 }
 
@@ -17,7 +21,7 @@ const GAP = 2;
 const truncate = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** Horizontal bars: <= 20px thick, rounded at the tip, a 2px surface gap between neighbours. */
-export function HBarChart({ categories, series, mode, format, ariaLabel }: Props) {
+export function HBarChart({ categories, series, mode, format, tickFormat, axis, ariaLabel }: Props) {
   const [ref, width] = useWidth();
   const [hidden, toggle] = useHidden();
   const [tip, setTip] = useState<TipState | null>(null);
@@ -33,7 +37,7 @@ export function HBarChart({ categories, series, mode, format, ariaLabel }: Props
   const rowValues = (i: number): number[] => shown.map((s) => s.values[i] ?? 0);
   const totals = categories.map((_, i) => rowValues(i).reduce((a, b) => a + b, 0));
   const highs = mode === 'stacked' ? totals : categories.flatMap((_, i) => rowValues(i));
-  const scale = niceScale(Math.min(0, ...(mode === 'stacked' ? [0] : highs)), Math.max(0, ...highs));
+  const scale = niceScale(Math.min(0, ...(mode === 'stacked' ? [0] : highs)), Math.max(0, ...highs), 4, axis);
   const plotW = Math.max(40, width - left - MARGIN.right);
   const x = (v: number) => left + (plotW * (v - scale.min)) / (scale.max - scale.min);
 
@@ -66,7 +70,7 @@ export function HBarChart({ categories, series, mode, format, ariaLabel }: Props
             <g key={t}>
               <line className="grid-line" x1={x(t)} x2={x(t)} y1={MARGIN.top} y2={height - MARGIN.bottom} />
               <text className="axis-text" x={x(t)} y={height - 8} textAnchor="middle">
-                {compact(t)}
+                {(tickFormat ?? compact)(t)}
               </text>
             </g>
           ))}

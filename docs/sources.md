@@ -26,7 +26,19 @@ What Analytics reads, as known on 2026-10-17.
 
 ## IntegrationHub events (phase 4)
 
-RabbitMQ exchange `clinical.events`, de-identified. Schema is owned by IntegrationHub (`docs/events.md` there).
+RabbitMQ exchange `clinical.events`, de-identified. Schema is owned by IntegrationHub (`docs/events.md` there); this
+is how Analytics reads it.
+
+- Kept: `order.placed`, `order.accepted`, `order.cancelled`, `order.cancel-refused`, `result.final`, `result.amended`.
+  Ignored: `finance.document`. Refused (reason code only): anything that does not match the contract's shapes or has a
+  `schemaVersion` other than 1.
+- Columns of `raw.clinical_event`: event id, schema version, type, occurred at (UTC), clinic slug, application, order id,
+  test code system and code, priority, status, patient pseudonym, received at. Nothing else is stored.
+- Department: `labflow` is Lab and `clinicreport` is Diagnostics; any other application keeps its name.
+- Questions: (1) Are `labflow` and `clinicreport` the only applications that receive orders? [Yes.] (2) Should a test
+  code be shown with a name? [No names exist in the events; the page shows codes. A code-to-name table would have to
+  come from LabFlow's test catalogue and ClinicReport's templates.] (3) Is the hub's `occurredAt` (when it relayed the
+  call) good enough as the time of an order and of a result? [Yes; the lab's own clocks are not in the events.]
 
 ## LabFlow dw (optional, phase 4)
 

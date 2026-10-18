@@ -76,7 +76,7 @@ function FilterBar() {
           </select>
         </label>
       )}
-      <span className="card-sub">Books up to {monthLabel(lastMonth)}</span>
+      <span className="card-sub">Data up to {monthLabel(lastMonth)}</span>
     </div>
   );
 }
@@ -89,6 +89,7 @@ export function Layout() {
     { to: '/ohip', label: 'OHIP' },
     { to: '/receivables', label: 'Receivables' },
     { to: '/hst', label: 'HST' },
+    { to: '/operations', label: 'Operations' },
     ...(me.scope === 'group' ? [{ to: '/group', label: 'Group' }] : []),
   ];
   return (

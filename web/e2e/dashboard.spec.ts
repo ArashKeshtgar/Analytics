@@ -215,6 +215,94 @@ test.describe('HST', () => {
   });
 });
 
+test.describe('operations', () => {
+  // From the synthetic events (tests/synthetic_events.py), all of October 2026:
+  //   group: 9 placed, 6 with a result (45, 60, 60, 270, 600, 2880 min), 2 waiting, 1 cancelled
+  //          median 165 min = 2 h 45 min, 90th percentile 1740 min = 1 d 5 h
+  //   Harbourview alone: 8 placed, 5 resulted (45, 60, 270, 600, 2880): median 270 = 4 h 30 min, p90 1968 = 1 d 9 h
+  test('a group user sees every clinic', async ({ page }) => {
+    await signInAs(page, 'group', '/operations');
+    await expect(tile(page, 'Orders placed')).toContainText('9');
+    await expect(tile(page, 'With a final result')).toContainText('6');
+    await expect(tile(page, 'Still waiting')).toContainText('2');
+    await expect(tile(page, 'Median turnaround')).toContainText('2 h 45 min');
+    await expect(tile(page, '90th percentile')).toContainText('1 d 5 h');
+    await expect(tile(page, 'Cancelled')).toContainText('1');
+    await expect(page.getByText('No patient is identifiable here')).toBeVisible();
+  });
+
+  test('a clinic user sees only their clinic', async ({ page }) => {
+    await signInAs(page, 'clinic', '/operations');
+    await expect(tile(page, 'Orders placed')).toContainText('8');
+    await expect(tile(page, 'With a final result')).toContainText('5');
+    await expect(tile(page, 'Median turnaround')).toContainText('4 h 30 min');
+    await expect(tile(page, '90th percentile')).toContainText('1 d 9 h');
+  });
+
+  test('the department switch narrows everything below it', async ({ page }) => {
+    await signInAs(page, 'group', '/operations');
+    await page.getByRole('button', { name: 'Diagnostics' }).click();
+    await expect(tile(page, 'Orders placed')).toContainText('1');
+    await expect(tile(page, 'Median turnaround')).toContainText('2 d');
+    await page.getByRole('button', { name: 'Lab', exact: true }).click();
+    await expect(tile(page, 'Orders placed')).toContainText('8');
+    await expect(tile(page, 'Median turnaround')).toContainText('1 h');
+    await expect(tile(page, '90th percentile')).toContainText('7 h 48 min');
+  });
+
+  test('turnaround by test, in the table twin and in the CSV', async ({ page }) => {
+    await signInAs(page, 'group', '/operations');
+    const card = page.locator('section.card', { hasText: 'Turnaround by test' });
+    await card.getByRole('button', { name: 'Table' }).click();
+    const row = (code: string) => card.locator('tbody tr', { hasText: code });
+    await expect(row('echo-tte')).toContainText('2 d');
+    await expect(row('718-7')).toContainText('4 h 30 min'); // median of 60, 270, 600
+    await expect(row('718-7')).toContainText('8 h 54 min'); // 90th percentile
+    await expect(row('2160-0')).toContainText('53 min');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      card.getByRole('button', { name: 'Download CSV' }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe('turnaround-by-test-2026-10.csv');
+    const text = await readFile((await download.path()) as string, 'utf8');
+    const lines = text.replace(/^\uFEFF/, '').split('\r\n');
+    expect(lines[0]).toBe('Test code,Placed,With a result,Waiting,Cancelled,Median,90th percentile');
+    // raw minutes, not "4 h 30 min": a spreadsheet can use them
+    expect(lines.find((l) => l.startsWith('718-7,'))).toBe('718-7,6,3,2,1,270,534');
+  });
+
+  test('cancellations with what was refused', async ({ page }) => {
+    await signInAs(page, 'group', '/operations');
+    const card = page.locator('section.card', { hasText: 'Cancellations' });
+    await expect(card).toContainText('1 cancelled and 1 refused by the lab');
+    await card.getByRole('button', { name: 'Table' }).click();
+    const lab = card.locator('tbody tr', { hasText: 'Lab' });
+    await expect(lab).toContainText('Oct 2026');
+    // the month is the row header: the cells are department, placed, cancelled, refused, share
+    await expect(lab.locator('td').nth(1)).toHaveText('8');
+    await expect(lab.locator('td').nth(2)).toHaveText('1');
+    await expect(lab.locator('td').nth(3)).toHaveText('1');
+    await expect(lab.locator('td').nth(4)).toHaveText('12.5%');
+  });
+
+  test('the business filter turns into a clinic', async ({ page }) => {
+    await signInAs(page, 'group', '/operations');
+    await page.getByRole('combobox', { name: 'Business' }).selectOption('HV');
+    await expect(tile(page, 'Orders placed')).toContainText('8');
+    await page.getByRole('combobox', { name: 'Business' }).selectOption('LAB');
+    await expect(page.getByText('No orders placed in the selected months.')).toBeVisible();
+  });
+
+  test('hovering a bar of the turnaround chart gives the median and the 90th percentile', async ({ page }) => {
+    await signInAs(page, 'group', '/operations');
+    const card = page.locator('section.card', { hasText: 'Turnaround by test' });
+    await card.getByLabel(/^echo-tte:/).hover();
+    await expect(card.getByRole('tooltip')).toContainText('2 d');
+    await expect(card.getByRole('tooltip')).toContainText('Median');
+    await expect(card.getByRole('tooltip')).toContainText('90th percentile');
+  });
+});
+
 test.describe('group', () => {
   test('businesses side by side', async ({ page }) => {
     await signInAs(page, 'group', '/group');
@@ -279,7 +367,7 @@ test.describe('look', () => {
     await context.close();
   });
 
-  for (const path of ['/', '/ohip', '/receivables', '/hst']) {
+  for (const path of ['/', '/ohip', '/receivables', '/hst', '/operations']) {
     test(`${path} has no horizontal scroll on a phone`, async ({ browser }) => {
       const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
       const page = await context.newPage();

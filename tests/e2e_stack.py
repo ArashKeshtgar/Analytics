@@ -20,7 +20,7 @@ from analytics.extract import extract_finance
 from analytics.settings import Settings
 from analytics.sources import DuckDbSource
 from analytics.warehouse import build
-from tests import synthetic_source
+from tests import synthetic_events, synthetic_source
 from tests.fake_idp import FakeIdP
 
 
@@ -52,6 +52,7 @@ def build_warehouse(root: Path) -> Settings:
         con = synthetic_source.create(tax_entries=True)
         add_prior_year(con)
         extract_finance(DuckDbSource(con), settings, now=day)
+    synthetic_events.store_events(settings, synthetic_events.all_events())
     if build(settings) != 0:
         raise SystemExit("the warehouse did not build")
     return settings

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { columnPath, Legend, niceScale, type Series, Tooltip, type TipState, useHidden, useWidth } from './common';
+import { columnPath, Legend, niceScale, type AxisKind, type Series, Tooltip, type TipState, useHidden, useWidth } from './common';
 import { compact } from '../../lib/format';
 
 interface Props {
@@ -9,6 +9,10 @@ interface Props {
   axisLabels?: string[];
   series: Series[];
   format(value: number): string;
+  /** Format of the y-axis ticks; defaults to compact numbers. */
+  tickFormat?(value: number): string;
+  /** Whole numbers (counts) or minutes (durations): picks the tick steps. */
+  axis?: AxisKind;
   ariaLabel: string;
   height?: number;
 }
@@ -18,7 +22,7 @@ const MAX_BAR = 24;
 const GAP = 2;
 
 /** Grouped columns: <= 24px thick, rounded data end, square baseline, a 2px gap between neighbours. */
-export function ColumnChart({ categories, axisLabels, series, format, ariaLabel, height = 260 }: Props) {
+export function ColumnChart({ categories, axisLabels, series, format, tickFormat, axis, ariaLabel, height = 260 }: Props) {
   const [ref, width] = useWidth();
   const [hidden, toggle] = useHidden();
   const [tip, setTip] = useState<TipState | null>(null);
@@ -27,7 +31,7 @@ export function ColumnChart({ categories, axisLabels, series, format, ariaLabel,
   const shown = series.filter((s) => !hidden.has(s.id));
 
   const values = shown.flatMap((s) => s.values.filter((v): v is number => v != null));
-  const scale = niceScale(Math.min(0, ...values), Math.max(0, ...values));
+  const scale = niceScale(Math.min(0, ...values), Math.max(0, ...values), 4, axis);
   const plotW = Math.max(40, width - MARGIN.left - MARGIN.right);
   const plotH = height - MARGIN.top - MARGIN.bottom;
   const y = (v: number) => MARGIN.top + (plotH * (scale.max - v)) / (scale.max - scale.min);
@@ -65,7 +69,7 @@ export function ColumnChart({ categories, axisLabels, series, format, ariaLabel,
             <g key={t}>
               <line className="grid-line" x1={MARGIN.left} x2={width - MARGIN.right} y1={y(t)} y2={y(t)} />
               <text className="axis-text" x={MARGIN.left - 8} y={y(t)} textAnchor="end" dominantBaseline="middle">
-                {compact(t)}
+                {(tickFormat ?? compact)(t)}
               </text>
             </g>
           ))}

@@ -1,8 +1,11 @@
+import threading
 from typing import Annotated
 
 import typer
 import uvicorn
 
+from analytics.events import ConsumerError, run_forever
+from analytics.events import consume as consume_events
 from analytics.extract import extract_finance
 from analytics.settings import get_settings
 from analytics.sources import SqlServerSource
@@ -28,6 +31,32 @@ def extract_finance_command() -> None:
     typer.echo(f"Run {result.run_id}")
     for table, count in result.rows.items():
         typer.echo(f"  {table}: {count} rows")
+
+
+@app.command()
+def consume(
+    drain: Annotated[bool, typer.Option(help="Read what is waiting, then stop.")] = False,
+) -> None:
+    """Read IntegrationHub's de-identified events from RabbitMQ into data/raw/events/."""
+    settings = get_settings()
+    stop = threading.Event()
+    if drain:
+        try:
+            result = consume_events(settings, drain=True, stop=stop)
+        except ConsumerError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=2) from None
+        typer.echo(
+            f"stored {result.stored}, rejected {result.rejected}, ignored {result.ignored}, "
+            f"batches {result.batches}"
+        )
+        for reason, count in sorted(result.reasons.items()):
+            typer.echo(f"  rejected: {reason} x{count}")
+        return
+    try:
+        run_forever(settings, stop)
+    except KeyboardInterrupt:
+        stop.set()
 
 
 @app.command()

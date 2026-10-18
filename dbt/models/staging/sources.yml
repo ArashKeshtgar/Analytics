@@ -19,3 +19,5 @@ sources:
       - name: dbo_accountingperiods
       - name: ar_item_history
       - name: ap_item_history
+      - name: clinical_event
+        description: De-identified events from IntegrationHub (data/raw/events/*.parquet), one row per event id.

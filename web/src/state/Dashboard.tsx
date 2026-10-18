@@ -13,7 +13,7 @@ export interface Range {
 interface DashboardValue {
   me: Me;
   businesses: Business[];
-  /** The latest month with data in the caller's scope; every preset counts back from it. */
+  /** The latest month with finance or operations data in the caller's scope; presets count back from it. */
   lastMonth: string;
   preset: Preset;
   setPreset(preset: Preset): void;
@@ -51,6 +51,23 @@ export function useFinance<T>(
   return useResource<T>(key, (signal) => get<T>(path, params, signal));
 }
 
+/**
+ * An operations query (IntegrationHub's events) scoped by the filter row. The business filter is by
+ * business code; events know clinics, so it is turned into the clinic slug, and a business with no
+ * clinic (the lab) matches nothing.
+ */
+export function useOps<T>(
+  path: string,
+  options: { params?: Params; department?: string } = {},
+): Resource<T> {
+  const { get, range, business, businesses } = useDashboard();
+  const params: Params = { ...options.params, from: range.from, to: range.to };
+  if (business) params.clinic = businesses.find((b) => b.code === business)?.clinicSlug ?? '-';
+  if (options.department) params.department = options.department;
+  const key = `${path}?${new URLSearchParams(params as Record<string, string>).toString()}`;
+  return useResource<T>(key, (signal) => get<T>(path, params, signal));
+}
+
 function Message({ children }: { children: ReactNode }) {
   return <div className="center">{children}</div>;
 }
@@ -62,10 +79,13 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const allowed = me.data !== undefined && me.data.scope !== 'none';
   const businesses = useResource<Business[]>('businesses', (signal) => get<Business[]>('/api/finance/businesses', {}, signal), allowed);
   const bounds = useResource<DataRange>('range', (signal) => get<DataRange>('/api/finance/range', {}, signal), allowed);
+  const opsBounds = useResource<DataRange>('opsRange', (signal) => get<DataRange>('/api/operations/range', {}, signal), allowed);
   const [preset, setPreset] = useState<Preset>('last12');
   const [business, setBusiness] = useState<string | undefined>(undefined);
 
-  const lastMonth = bounds.data?.lastMonth ?? null;
+  const financeLast = bounds.data?.lastMonth ?? null;
+  const opsLast = opsBounds.data?.lastMonth ?? null;
+  const lastMonth = financeLast && opsLast && opsLast > financeLast ? opsLast : financeLast;
   const range = useMemo(() => (lastMonth ? rangeFor(preset, lastMonth) : null), [preset, lastMonth]);
 
   if (me.error) return <Message><p className="error">{me.error}</p></Message>;
@@ -79,8 +99,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       </Message>
     );
   }
-  if (bounds.error || businesses.error) return <Message><p className="error">{bounds.error ?? businesses.error}</p></Message>;
-  if (!bounds.data || !businesses.data) return <Message><p>Loading…</p></Message>;
+  const failed = bounds.error ?? businesses.error ?? opsBounds.error;
+  if (failed) return <Message><p className="error">{failed}</p></Message>;
+  if (!bounds.data || !businesses.data || !opsBounds.data) return <Message><p>Loading…</p></Message>;
   if (!lastMonth || !range) {
     return (
       <Message>

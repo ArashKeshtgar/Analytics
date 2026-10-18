@@ -5,9 +5,11 @@ import subprocess
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
+from analytics.events import EVENT_COLUMNS, events_dir
 from analytics.finance_tables import FINANCE_TABLES, HISTORY_TABLES
 from analytics.settings import Settings
 
@@ -86,6 +88,40 @@ def load_raw(settings: Settings, con: duckdb.DuckDBPyConnection) -> list[str]:
     return runs
 
 
+_DUCKDB_TYPES = {
+    "String": "VARCHAR",
+    "Int32": "INTEGER",
+    "Datetime": "TIMESTAMP",
+}
+
+
+def load_events(settings: Settings, con: duckdb.DuckDBPyConnection) -> int:
+    """Rebuild raw.clinical_event from the Parquet files the consumer wrote: one row per event id.
+
+    Delivery is at least once, so the same event can be in two files; the first one received wins.
+    With no files the table is empty, so the models still build. Returns the number of events.
+    """
+    con.execute("CREATE SCHEMA IF NOT EXISTS raw")
+    columns = ", ".join(f"{name} {_duckdb_type(kind)}" for name, kind in EVENT_COLUMNS.items())
+    files = sorted(events_dir(settings).glob("events-*.parquet"))
+    if not files:
+        con.execute("DROP TABLE IF EXISTS raw.clinical_event")
+        con.execute(f"CREATE TABLE raw.clinical_event ({columns})")
+        return 0
+    pattern = str(events_dir(settings) / "events-*.parquet").replace("'", "''")
+    con.execute(
+        "CREATE OR REPLACE TABLE raw.clinical_event AS "
+        f"SELECT * FROM read_parquet('{pattern}') "
+        "QUALIFY row_number() OVER (PARTITION BY event_id ORDER BY received_at) = 1"
+    )
+    row = con.execute("SELECT count(*) FROM raw.clinical_event").fetchone()
+    return int(row[0]) if row else 0
+
+
+def _duckdb_type(kind: Any) -> str:
+    return _DUCKDB_TYPES[str(kind).split("(")[0]]
+
+
 def run_dbt(settings: Settings, command: str = "build") -> int:
     dbt = Path(sys.executable).parent / "dbt"
     work = (settings.data_dir / "dbt").resolve()
@@ -113,6 +149,7 @@ def build(settings: Settings) -> int:
     try:
         ensure_meta(con)
         runs = load_raw(settings, con)
+        load_events(settings, con)
     finally:
         con.close()
     if not runs:

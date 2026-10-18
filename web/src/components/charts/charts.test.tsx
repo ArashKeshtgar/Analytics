@@ -31,6 +31,22 @@ describe('niceScale', () => {
   });
 });
 
+describe('niceScale kinds', () => {
+  it('whole numbers: a count never gets a fractional tick', () => {
+    const s = niceScale(0, 1, 4, 'integer');
+    expect(s.ticks).toEqual([0, 1]);
+    expect(niceScale(0, 7, 4, 'integer').ticks.every(Number.isInteger)).toBe(true);
+    expect(niceScale(0, 1, 4).ticks).toContain(0.25); // the plain scale would
+  });
+
+  it('durations: ticks fall on natural time steps', () => {
+    expect(niceScale(0, 2880, 4, 'duration').ticks).toEqual([0, 720, 1440, 2160, 2880]); // 12 h, 1 d, 1.5 d, 2 d
+    expect(niceScale(0, 501, 4, 'duration').ticks).toEqual([0, 180, 360, 540]); // 3 h, 6 h, 9 h
+    expect(niceScale(0, 60, 4, 'duration').ticks).toEqual([0, 15, 30, 45, 60]);
+    expect(niceScale(0, 1740, 4, 'duration').ticks.at(-1)).toBeGreaterThanOrEqual(1740);
+  });
+});
+
 describe('mark paths', () => {
   it('rounds the data end of a column and keeps the baseline square', () => {
     const d = columnPath(10, 100, 40, 20, 4);

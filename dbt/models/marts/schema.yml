@@ -34,3 +34,11 @@ models:
       - name: business_id
         data_tests:
           - relationships: {to: ref('dim_business'), field: business_id}
+  - name: fact_order
+    columns:
+      - name: order_id
+        data_tests: [not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              values: ['placed', 'accepted', 'resulted', 'resulted (placed before the hub)', 'cancelled', 'unknown']

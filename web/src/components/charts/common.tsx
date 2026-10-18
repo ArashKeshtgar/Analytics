@@ -46,14 +46,24 @@ export interface Scale {
   ticks: number[];
 }
 
-/** A scale that always includes zero, with round tick values. */
-export function niceScale(low: number, high: number, count = 4): Scale {
+/** What the axis counts: plain numbers, whole numbers (counts), or minutes (ticks on natural time steps). */
+export type AxisKind = 'number' | 'integer' | 'duration';
+
+// Minutes: 15 min, 30 min, 1 h, 2 h, 3 h, 6 h, 12 h, 1 d, 2 d, 3 d, 1 week, 2 weeks, 30 days, 1 year.
+const DURATION_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880, 4320, 10080, 20160, 43200, 525600];
+
+/** A scale that always includes zero, with round tick values (for `duration`, natural time steps). */
+export function niceScale(low: number, high: number, count = 4, kind: AxisKind = 'number'): Scale {
   const lo = Math.min(0, low);
   let hi = Math.max(0, high);
   if (hi === lo) hi = lo + 1;
   const raw = (hi - lo) / count;
   const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const step = ([1, 2, 2.5, 5, 10].map((f) => f * magnitude).find((s) => s >= raw) ?? 10 * magnitude);
+  let step =
+    kind === 'duration'
+      ? (DURATION_STEPS.find((s) => s >= raw) ?? raw)
+      : ([1, 2, 2.5, 5, 10].map((f) => f * magnitude).find((s) => s >= raw) ?? 10 * magnitude);
+  if (kind === 'integer') step = Math.max(1, Math.ceil(step));
   const min = Math.floor(lo / step + 1e-9) * step;
   const max = Math.ceil(hi / step - 1e-9) * step;
   const ticks: number[] = [];

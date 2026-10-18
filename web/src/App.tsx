@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { Group } from './pages/Group';
 import { Hst } from './pages/Hst';
 import { Ohip } from './pages/Ohip';
+import { Operations } from './pages/Operations';
 import { Overview } from './pages/Overview';
 import { Receivables } from './pages/Receivables';
 import { DashboardProvider } from './state/Dashboard';
@@ -49,6 +50,7 @@ export default function App() {
               <Route path="ohip" element={<Ohip />} />
               <Route path="receivables" element={<Receivables />} />
               <Route path="hst" element={<Hst />} />
+              <Route path="operations" element={<Operations />} />
               <Route path="group" element={<Group />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

@@ -52,7 +52,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
 | 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**, except the comparison with FinancePowerApp's own reports (see below) |
-| 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | Not started |
+| 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**, except the optional LabFlow `dw` source |
 | 5 | Forecasts and anomalies, with backtests and model cards | Not started |
 | 6 | Scheduling, data-quality checks, platform compose | Not started |
 
@@ -238,6 +238,71 @@ Depends on IntegrationHub phase 3 (the `clinical.events` feed, schema in its `do
   vs diagnostics, clinic, priority, median and 90th percentile), `mart_cancellations` (cancelled, refused cancels).
 - Dashboard page **Operations**: this is ClinicHub's open README item "Clinic operations dashboard".
 - Optional: LabFlow `dw` (already de-identified star schema) as a second source for lab volumes.
+
+**Built:**
+
+- `analytics consume` (`events.py`, pika): declares the topic exchange `clinical.events`, the durable queue
+  `analytics.clinical-events` and the `#` binding exactly as IntegrationHub does (durable, no arguments, idempotent),
+  reads with a prefetch of one batch, writes each batch as a Parquet file under `data/raw/events/` (to a temporary file,
+  `fsync`, rename) and **only then acknowledges it**. If the write fails nothing is acknowledged and the broker gives the
+  messages out again (tested with a broken writer). `--drain` reads what is waiting and stops (for a schedule, phase 6);
+  without it the command keeps running and reconnects with a growing pause. A connection error never prints the URL or
+  the password.
+- **A strict allow-list in front of everything that is kept.** Every field must look like what IntegrationHub's contract
+  says it is: a pseudonym is 64 hex characters, an order id is `service-request|` and a plain token, a priority is one of
+  routine, urgent, asap, stat, a test code has no spaces. An event that does not fit is rejected whole; the rejection is
+  written as a **reason code** (with the event id and type when those are well formed) and never as the value. Fields the
+  contract does not name are dropped before anything is written (tested with a name, a health card and a note planted in
+  events, searching every byte on disk). `schemaVersion` other than 1 is rejected as `unsupported-schema-version`.
+  `finance.document` is ignored: money comes from FinancePowerApp's database, and counting it twice would be wrong.
+- `analytics build` loads the Parquet files into `raw.clinical_event`, **one row per event id** (the first received wins:
+  delivery is at least once, and a repeated event is in the files twice), and runs dbt. With no events at all the table
+  is empty and the models still build.
+- dbt: `stg_clinical_event`; `fact_order` (one row per order, built from its events in whatever order they arrived:
+  placed, accepted, first and last final result, amendments, cancel, refused cancels, status, department
+  Lab = LabFlow and Diagnostics = ClinicReport, turnaround in minutes from placed to the first final result);
+  `mart_turnaround` (clinic, month placed, department, test, priority: orders placed and resulted, median and 90th
+  percentile); `mart_cancellations`. Tests: one row per event and per order, no result before its order, and the usual
+  not-null and accepted-values.
+- API (clinic-scoped like the rest; a clinic user's own clinic always applies): `GET /api/operations/turnaround`
+  (`clinic`, `department`, `from`, `to`, `groupBy` = comma list of `month|clinic|department|test|priority`, or `none`),
+  `/api/operations/cancellations`, `/api/operations/range`. Percentiles come from `fact_order` so any grouping is exact
+  (a median of medians would not be).
+- **Operations page** in the dashboard (ClinicHub's open README item "Clinic operations dashboard"): orders placed, with a
+  final result, waiting, median and 90th percentile, cancelled; turnaround by test and by month; by priority; lab and
+  diagnostics; cancellations and refused cancels; a department switch; a table twin and CSV for each. Durations are
+  written in whole units ("2 h 45 min", "1 d 5 h") and the axis ticks fall on hours and days. The filter row now counts
+  back from the later of the last finance month and the last month with events ("Data up to").
+- Tests: 47 for the consumer (parsing every rejection, and against a real RabbitMQ in Testcontainers: drain, batching,
+  duplicates, rejections, no trace of planted values on disk, nothing acknowledged when the write fails, reading until
+  told to stop, an unreachable broker), 27 for the models and API (turnaround, percentiles, grouping, scoping, out-of-order
+  events, a result before its order fails the build), 84 in Vitest and 32 in the browser (8 new for this page).
+- Also found and fixed: `get_settings()` is cached for the whole process, so a test that set the environment could see an
+  earlier test's values (or leave its own behind); every test now starts with a clean cache. And the page's "totals"
+  request (`groupBy=`) was dropped by the client, which skips empty values, so it would have been grouped by month; the
+  API takes `groupBy=none` now.
+
+**Not built, said plainly:**
+
+- The optional LabFlow `dw` source.
+- Nothing runs the consumer and `analytics build` on a schedule yet (phase 6). The dashboard shows what the last build
+  had; consumed events wait on disk until then.
+- A rejected event is acknowledged and gone: there is no dead-letter queue, so an event refused for an unsupported
+  `schemaVersion` cannot be replayed after Analytics learns version 2. The hub keeps published outbox rows for 7 days
+  but has no replay yet.
+- Test names: events carry codes only (LOINC, ClinicReport template keys), so the page shows codes.
+- Not seen with the real IntegrationHub: the tests publish events as its `docs/events.md` describes, against a real
+  RabbitMQ.
+- `patient_pseudonym` is stored in `fact_order` (a later phase may count patients) but no page or endpoint shows it.
+
+**Other repositories — to do locally, not done:**
+
+1. ClinicHub: tick the README item "Clinic operations dashboard". The Operations page is open to every `dashboard.view`
+   user of the clinic and to `group.view`.
+2. RabbitMQ: a real account for Analytics (the development `guest` only works from the same host). It needs to
+   configure and read `analytics.clinical-events` and read from the `clinical.events` exchange.
+3. IntegrationHub must be running with `HUB_EVENTS_ENABLED=true` for any events to exist; until Analytics first starts
+   the hub's own declared queue keeps what is published.
 
 ### Phase 5 — Forecasts and anomalies
 

@@ -21,6 +21,7 @@ uv run analytics serve            # API on :5600
 curl localhost:5600/healthz
 # the finance endpoints need a ClinicHub access token: curl -H "Authorization: Bearer $TOKEN" localhost:5600/api/me
 uv run analytics extract finance  # needs ANALYTICS_FINANCE_CONNECTION_STRING
+uv run analytics consume --drain  # read IntegrationHub's events from RabbitMQ (without --drain: keep running)
 uv run analytics build            # raw -> data/warehouse.duckdb -> dbt models and tests
 ```
 
@@ -36,7 +37,7 @@ Image: `docker build -t analytics .` (includes the SQL Server ODBC driver, used 
 - [x] Phase 1 — finance warehouse from FinancePowerApp, dbt marts, API
 - [x] Phase 2 — sign-in through ClinicHub, clinic-scoped access — API done; web sign-in comes with the web (phase 3)
 - [x] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
-- [ ] Phase 4 — operations from IntegrationHub events: turnaround, cancellations
+- [x] Phase 4 — operations from IntegrationHub events: turnaround, cancellations
 - [ ] Phase 5 — revenue forecasts and remittance anomalies, with backtests
 - [ ] Phase 6 — scheduled runs, data-quality report, platform compose
 

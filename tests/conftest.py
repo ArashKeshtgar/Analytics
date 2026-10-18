@@ -15,10 +15,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from analytics.extract import extract_finance
-from analytics.settings import Settings
+from analytics.settings import Settings, get_settings
 from analytics.sources import DuckDbSource
 from analytics.warehouse import build
-from tests import synthetic_source
+from tests import synthetic_events, synthetic_source
 
 ISSUER = "http://localhost:5301/"
 KEY_ID = "test-key"
@@ -26,6 +26,15 @@ KEY_ID = "test-key"
 GROUP = "analytics:group.view"
 DASHBOARD = "analytics:dashboard.view"
 MODELS = "analytics:models.view"
+
+
+@pytest.fixture(autouse=True)
+def fresh_settings() -> Iterator[None]:
+    """`get_settings()` is cached for the life of the process: a test that sets the environment
+    must see its own values, and must not leave them behind."""
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def make_settings(root: Path, **extra: Any) -> Settings:
@@ -112,6 +121,25 @@ def built_tax(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Settings]:
     )
     assert build(settings) == 0
     yield settings
+
+
+@pytest.fixture(scope="session")
+def built_ops(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Settings]:
+    """Finance (synthetic) and the operational events (tests/synthetic_events.py), built."""
+    settings = make_settings(tmp_path_factory.mktemp("pipeline_ops"))
+    extract_finance(
+        DuckDbSource(synthetic_source.create()),
+        settings,
+        now=datetime(2026, 10, 31, 12, tzinfo=UTC),
+    )
+    synthetic_events.store_events(settings, synthetic_events.all_events())
+    assert build(settings) == 0
+    yield settings
+
+
+@pytest.fixture(scope="session")
+def auth_settings_ops(built_ops: Settings, clinichub: FakeClinicHub) -> Settings:
+    return built_ops.model_copy(update={"oidc_issuer": ISSUER, "oidc_jwks_uri": clinichub.jwks_uri})
 
 
 @pytest.fixture(scope="session")

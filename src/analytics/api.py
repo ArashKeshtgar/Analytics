@@ -25,6 +25,16 @@ _REVENUE_GROUPS = {
     "provider": "r.provider_code as provider",
 }
 
+# groupBy value -> select expression for the operations queries (fixed list, never request text).
+_OPS_GROUPS = {
+    "month": "date_trunc('month', o.placed_at)::date as month",
+    "clinic": "o.clinic_slug as clinic",
+    "department": "o.department as department",
+    "test": "coalesce(o.test_code, 'unknown') as test",
+    "priority": "coalesce(o.priority, 'unknown') as priority",
+}
+_DEPARTMENTS = ("Lab", "Diagnostics")
+
 _BUSINESS_FILTER = (
     "{a}.business_id in (select business_id from main.dim_business "
     "where lower(code) = lower(?) or lower(clinic_slug) = lower(?))"
@@ -124,6 +134,124 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             params,
         )
         return rows[0]
+
+    def ops_clauses(
+        alias: str,
+        scope: Scope,
+        clinic: str | None,
+        department: str | None,
+        from_: date | None,
+        to: date | None,
+        time_column: str,
+    ) -> tuple[str, list[Any]]:
+        """Filters of the operations queries. The clinic in the token always applies."""
+        if department is not None and department not in _DEPARTMENTS:
+            raise HTTPException(422, f"department must be one of: {', '.join(_DEPARTMENTS)}")
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not scope.group:
+            clauses.append(f"lower({alias}.clinic_slug) = lower(?)")
+            params.append(scope.clinic_slug)
+        if clinic:
+            clauses.append(f"lower({alias}.clinic_slug) = lower(?)")
+            params.append(clinic)
+        if department and alias == "o":
+            clauses.append("o.department = ?")
+            params.append(department)
+        if from_:
+            clauses.append(
+                f"date_trunc('month', {alias}.{time_column}) >= date_trunc('month', ?::date)"
+            )
+            params.append(from_)
+        if to:
+            clauses.append(f"date_trunc('month', {alias}.{time_column}) <= ?::date")
+            params.append(to)
+        return (("where " + " and ".join(clauses)) if clauses else ""), params
+
+    @app.get("/api/operations/range")
+    def operations_range(
+        scope: Annotated[Scope, Depends(current_scope)], clinic: str | None = None
+    ) -> dict[str, Any]:
+        """First and last month with events in the caller's scope (null when none)."""
+        where, params = ops_clauses("e", scope, clinic, None, None, None, "occurred_at")
+        rows = query(
+            "select min(date_trunc('month', e.occurred_at))::date as \"firstMonth\", "
+            "max(date_trunc('month', e.occurred_at))::date as \"lastMonth\" "
+            f"from main.stg_clinical_event e {where}",
+            params,
+        )
+        return rows[0]
+
+    @app.get("/api/operations/turnaround")
+    def turnaround(
+        scope: Annotated[Scope, Depends(current_scope)],
+        clinic: str | None = None,
+        department: str | None = None,
+        from_: Annotated[date | None, Query(alias="from")] = None,
+        to: date | None = None,
+        group_by: Annotated[str, Query(alias="groupBy")] = "month",
+    ) -> list[dict[str, Any]]:
+        """Orders, results and order-to-result time (median, 90th percentile, in minutes).
+
+        Grouped by a comma list of month, clinic, department, test, priority; `groupBy=none` is one
+        row for everything. Months are the month the order was placed.
+        """
+        keys = [k.strip() for k in group_by.split(",") if k.strip() and k.strip() != "none"]
+        unknown = [k for k in keys if k not in _OPS_GROUPS]
+        if unknown:
+            raise HTTPException(422, f"groupBy must be a list of: {', '.join(_OPS_GROUPS)}")
+        where, params = ops_clauses("o", scope, clinic, department, from_, to, "placed_at")
+        where = (where + " and " if where else "where ") + "o.placed_at is not null"
+        measures = (
+            "count(*) as placed, count(o.turnaround_minutes) as resulted, "
+            "count(*) filter (where o.status = 'cancelled') as cancelled, "
+            "count(*) filter (where o.status in ('placed', 'accepted')) as pending, "
+            "round(median(o.turnaround_minutes), 1)::double as median_minutes, "
+            "round(quantile_cont(o.turnaround_minutes, 0.9), 1)::double as p90_minutes"
+        )
+        columns = ", ".join(_OPS_GROUPS[k] for k in keys)
+        positions = ", ".join(str(i + 1) for i in range(len(keys)))
+        sql = (
+            f"select {columns + ', ' if keys else ''}{measures} from main.fact_order o {where}"
+            + (f" group by {positions} order by {positions}" if keys else "")
+        )
+        return query(sql, params)
+
+    @app.get("/api/operations/cancellations")
+    def cancellations(
+        scope: Annotated[Scope, Depends(current_scope)],
+        clinic: str | None = None,
+        department: str | None = None,
+        from_: Annotated[date | None, Query(alias="from")] = None,
+        to: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Per month and department: orders placed, cancelled, and cancels the lab refused."""
+        o_where, o_params = ops_clauses("o", scope, clinic, department, from_, to, "placed_at")
+        o_where = (o_where + " and " if o_where else "where ") + "o.placed_at is not null"
+        c_where, c_params = ops_clauses("e", scope, clinic, None, from_, to, "occurred_at")
+        c_where = (c_where + " and " if c_where else "where ") + (
+            "e.type in ('order.cancelled', 'order.cancel-refused')"
+        )
+        dept = "and coalesce(f.department, 'Unknown') = ?" if department else ""
+        sql = (
+            "with placed as (select date_trunc('month', o.placed_at)::date as month, o.department, "
+            f"count(*) as placed from main.fact_order o {o_where} group by 1, 2), "
+            "cancels as (select date_trunc('month', e.occurred_at)::date as month, "
+            "coalesce(f.department, 'Unknown') as department, "
+            "count(*) filter (where e.type = 'order.cancelled') as cancelled, "
+            "count(*) filter (where e.type = 'order.cancel-refused') as cancel_refused "
+            "from main.stg_clinical_event e left join main.fact_order f "
+            "on f.clinic_slug = e.clinic_slug and f.order_id = e.order_id "
+            f"{c_where} {dept} group by 1, 2) "
+            "select coalesce(p.month, c.month) as month, "
+            "coalesce(p.department, c.department) as department, "
+            "coalesce(p.placed, 0) as placed, coalesce(c.cancelled, 0) as cancelled, "
+            "coalesce(c.cancel_refused, 0) as cancel_refused "
+            "from placed p full outer join cancels c "
+            "on c.month = p.month and c.department = p.department "
+            "order by 1, 2"
+        )
+        return query(sql, [*o_params, *c_params, *([department] if department else [])])
 
     @app.get("/api/finance/revenue")
     def revenue(

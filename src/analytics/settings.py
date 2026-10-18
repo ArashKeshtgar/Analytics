@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     web_origin: str = "http://localhost:5601"
     # RabbitMQ feed from IntegrationHub (phase 4).
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_exchange: str = "clinical.events"
+    # The hub declares this durable queue too (both without arguments).
+    rabbitmq_queue: str = "analytics.clinical-events"
+    # A batch is written, then acknowledged: at most this many events, or this many seconds.
+    consume_batch_size: int = 200
+    consume_flush_seconds: float = 5.0
 
     @property
     def effective_jwks_uri(self) -> str:

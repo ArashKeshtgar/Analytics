@@ -58,6 +58,28 @@ export interface AgingRow {
   items: number;
 }
 
+export interface TurnaroundRow {
+  month?: string;
+  clinic?: string;
+  department?: string;
+  test?: string;
+  priority?: string;
+  placed: number;
+  resulted: number;
+  cancelled: number;
+  pending: number;
+  median_minutes: number | null;
+  p90_minutes: number | null;
+}
+
+export interface CancellationRow {
+  month: string;
+  department: string;
+  placed: number;
+  cancelled: number;
+  cancel_refused: number;
+}
+
 export type HstMeasure = 'sales' | 'purchases' | 'tax_collected' | 'itc';
 
 export interface HstRow {

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Me } from '../api/types';
 import { Layout } from '../components/Layout';
 import { Ohip } from '../pages/Ohip';
+import { Operations } from '../pages/Operations';
 import { Receivables } from '../pages/Receivables';
 import { DashboardProvider } from './Dashboard';
 
@@ -22,6 +23,7 @@ vi.mock('../auth/AuthProvider', () => ({ useAuth: () => auth }));
 interface World {
   me: Me | { status: number; detail: string };
   lastMonth: string | null;
+  opsLastMonth?: string | null;
 }
 const businesses = [
   { code: 'HV', name: 'Harbourview Clinic', kind: 'Clinic', clinicSlug: 'harbourview' },
@@ -44,6 +46,8 @@ function serve(world: World): void {
           return json(businesses);
         case '/api/finance/range':
           return json({ firstMonth: world.lastMonth && '2025-10-01', lastMonth: world.lastMonth });
+        case '/api/operations/range':
+          return json({ firstMonth: null, lastMonth: world.opsLastMonth ?? null });
         default:
           return json([]);
       }
@@ -62,6 +66,7 @@ function renderAt(path: string) {
           <Route element={<Layout />}>
             <Route path="ohip" element={<Ohip />} />
             <Route path="receivables" element={<Receivables />} />
+            <Route path="operations" element={<Operations />} />
             <Route index element={<p>overview page</p>} />
           </Route>
         </Routes>
@@ -82,7 +87,7 @@ describe('what each kind of user sees', () => {
     renderAt('/');
     expect(await screen.findByRole('link', { name: 'Group' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Business' })).toBeInTheDocument();
-    expect(screen.getByText('Books up to Oct 2026')).toBeInTheDocument();
+    expect(screen.getByText('Data up to Oct 2026')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Group Lab' })).toBeInTheDocument();
   });
 
@@ -161,3 +166,44 @@ describe('the filter row scopes every request', () => {
     await waitFor(() => expect(lastCall('/api/finance/aging').searchParams.get('side')).toBe('payable'));
   });
 });
+
+describe('operations', () => {
+  it('counts back from the later of the last finance month and the last month with events', async () => {
+    serve({ me: group, lastMonth: '2026-10-01', opsLastMonth: '2026-11-01' });
+    renderAt('/ohip');
+    expect(await screen.findByText('Data up to Nov 2026')).toBeInTheDocument();
+    await waitFor(() => expect(callsTo('/api/finance/ohip-collection')).not.toHaveLength(0));
+    expect(lastCall('/api/finance/ohip-collection').searchParams.get('to')).toBe('2026-11-01');
+
+    serve({ me: group, lastMonth: '2026-10-01', opsLastMonth: '2026-08-01' });
+    renderAt('/ohip');
+    expect((await screen.findAllByText('Data up to Oct 2026')).length).toBeGreaterThan(0);
+  });
+
+  it('sends the range, the department and, for a business, its clinic', async () => {
+    serve({ me: group, lastMonth: '2026-10-01', opsLastMonth: '2026-10-01' });
+    renderAt('/operations');
+    await waitFor(() => expect(callsTo('/api/operations/turnaround')).not.toHaveLength(0));
+    const totals = callsTo('/api/operations/turnaround').find((u) => u.searchParams.get('groupBy') === 'none') as URL;
+    expect(Object.fromEntries(totals.searchParams)).toEqual({ groupBy: 'none', from: '2025-11-01', to: '2026-10-01' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lab' }));
+    await waitFor(() => expect(lastCall('/api/operations/cancellations').searchParams.get('department')).toBe('Lab'));
+    // the "by department" table is not narrowed by the department it compares
+    const byDepartment = callsTo('/api/operations/turnaround').filter((u) => u.searchParams.get('groupBy') === 'department');
+    expect(byDepartment.every((u) => !u.searchParams.has('department'))).toBe(true);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Business' }), 'HV');
+    await waitFor(() => expect(lastCall('/api/operations/cancellations').searchParams.get('clinic')).toBe('harbourview'));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Business' }), 'LAB');
+    // the lab is not a clinic: no events can match it
+    await waitFor(() => expect(lastCall('/api/operations/cancellations').searchParams.get('clinic')).toBe('-'));
+  });
+
+  it('says so when there are no orders in the range', async () => {
+    serve({ me: clinic, lastMonth: '2026-10-01', opsLastMonth: null });
+    renderAt('/operations');
+    expect(await screen.findByText('No orders placed in the selected months.')).toBeInTheDocument();
+  });
+});
+

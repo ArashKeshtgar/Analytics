@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type PointerEvent, useState } from 'react';
 import { compact } from '../../lib/format';
-import { Legend, niceScale, type Series, Tooltip, type TipState, useHidden, useWidth } from './common';
+import { Legend, niceScale, type AxisKind, type Series, Tooltip, type TipState, useHidden, useWidth } from './common';
 
 interface Props {
   categories: string[];
@@ -9,6 +9,8 @@ interface Props {
   format(value: number): string;
   /** Format of the y-axis ticks; defaults to compact numbers. */
   tickFormat?(value: number): string;
+  /** Whole numbers (counts) or minutes (durations): picks the tick steps. */
+  axis?: AxisKind;
   ariaLabel: string;
   height?: number;
 }
@@ -16,7 +18,7 @@ interface Props {
 const BASE_MARGIN = { top: 12, bottom: 28, left: 52 };
 
 /** 2px lines, an end dot with a surface ring, a crosshair that snaps to the nearest position. */
-export function LineChart({ categories, axisLabels, series, format, tickFormat, ariaLabel, height = 260 }: Props) {
+export function LineChart({ categories, axisLabels, series, format, tickFormat, axis, ariaLabel, height = 260 }: Props) {
   const [ref, width] = useWidth();
   const [hidden, toggle] = useHidden();
   const [index, setIndex] = useState<number | null>(null);
@@ -24,7 +26,7 @@ export function LineChart({ categories, axisLabels, series, format, tickFormat, 
   const shown = series.filter((s) => !hidden.has(s.id));
 
   const values = shown.flatMap((s) => s.values.filter((v): v is number => v != null));
-  const scale = niceScale(Math.min(0, ...values), Math.max(0, ...values));
+  const scale = niceScale(Math.min(0, ...values), Math.max(0, ...values), 4, axis);
   const tick = tickFormat ?? compact;
 
   // End labels ride the lines when there is room and they do not collide; otherwise the legend and the
