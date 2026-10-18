@@ -3,7 +3,7 @@ import type { ForecastResponse, ForecastSeries } from '../api/types';
 import { Card, Empty, Notice } from '../components/Card';
 import { LineChart } from '../components/charts/LineChart';
 import { StatTile } from '../components/StatTile';
-import { forecastChart, modelName } from '../lib/forecast';
+import { forecastChart, modelName, shortModelName } from '../lib/forecast';
 import { money, money2, monthLabel, monthShort } from '../lib/format';
 import { useDashboard, useFinance } from '../state/Dashboard';
 
@@ -16,7 +16,8 @@ const number = (digits: number) => (v: unknown) => (typeof v === 'number' ? v.to
 export function Forecast() {
   const { me } = useDashboard();
   const allowed = me.permissions.includes(MODELS_VIEW);
-  const answer = useFinance<ForecastResponse>('/api/models/revenue-forecast', { range: 'none' });
+  // Every series in scope: the page has its own picker, and the filter bar is not shown here.
+  const answer = useFinance<ForecastResponse>('/api/models/revenue-forecast', { range: 'none', business: false });
   const [picked, setPicked] = useState<string | undefined>(undefined);
   if (!allowed) {
     return <Empty>Forecasts are for people with the models permission (analytics:models.view).</Empty>;
@@ -65,7 +66,7 @@ export function Forecast() {
         <div className={`tiles${stale ? ' stale' : ''}`}>
           <StatTile label={`Forecast, ${monthLabel(current.forecast[0]?.month ?? run.dataThrough)}`} value={money(current.forecast[0]?.forecast)} />
           <StatTile label="Next 6 months" value={money(total)} />
-          <StatTile label="Model" value={modelName(current.model)} />
+          <StatTile label="Model" value={shortModelName(current.model)} />
           <StatTile label="Backtest MASE" value={number(2)(chosen?.mase)} />
         </div>
       ) : (

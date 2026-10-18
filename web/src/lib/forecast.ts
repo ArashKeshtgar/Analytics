@@ -40,3 +40,13 @@ export const MODEL_NAMES: Record<string, string> = {
 };
 
 export const modelName = (id: string | null): string => (id == null ? '–' : (MODEL_NAMES[id] ?? id));
+
+/** The same, short enough for a tile. */
+const SHORT_NAMES: Record<string, string> = {
+  'seasonal-naive': 'Seasonal naive',
+  ets: 'ETS',
+  sarima: 'SARIMA',
+  'gradient-boosting': 'Gradient boosting',
+};
+
+export const shortModelName = (id: string | null): string => (id == null ? '–' : (SHORT_NAMES[id] ?? id));

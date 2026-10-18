@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ForecastSeries } from '../api/types';
-import { forecastChart, modelName } from './forecast';
+import { forecastChart, modelName, shortModelName } from './forecast';
 
 const series = (history: number, ahead: number): ForecastSeries => ({
   business: 'HV',
@@ -45,5 +45,7 @@ describe('forecastChart', () => {
     expect(modelName('seasonal-naive')).toMatch(/same month last year/);
     expect(modelName(null)).toBe('–');
     expect(modelName('other')).toBe('other');
+    expect(shortModelName('gradient-boosting')).toBe('Gradient boosting');
+    expect(shortModelName('ets')).toBe('ETS');
   });
 });

@@ -55,19 +55,17 @@ function FilterBar() {
   const { preset, setPreset, business, setBusiness, businesses, me, lastMonth } = useDashboard();
   const { pathname } = useLocation();
   const showBusiness = me.scope === 'group' && pathname !== '/group' && businesses.length > 1;
-  // The forecast has its own months (the models' history and the six ahead): the presets do not apply.
-  const showPresets = pathname !== '/forecast';
+  // The forecast has its own months and its own series picker: none of these filters apply there.
+  if (pathname === '/forecast') return null;
   return (
     <div className="filters" role="group" aria-label="Filters">
-      {showPresets && (
-        <div className="presets">
-          {PRESETS.map((p) => (
-            <button key={p.id} type="button" className="btn" aria-pressed={preset === p.id} onClick={() => setPreset(p.id)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="presets">
+        {PRESETS.map((p) => (
+          <button key={p.id} type="button" className="btn" aria-pressed={preset === p.id} onClick={() => setPreset(p.id)}>
+            {p.label}
+          </button>
+        ))}
+      </div>
       {showBusiness && (
         <label>
           Business
