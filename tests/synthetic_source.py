@@ -10,7 +10,7 @@ import duckdb
 from analytics.finance_tables import FINANCE_TABLES
 
 
-def create(unbalanced_entry: bool = False) -> duckdb.DuckDBPyConnection:
+def create(unbalanced_entry: bool = False, tax_entries: bool = False) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(":memory:")
     for schema in ("org", "tax", "gl", "ar", "ap", "dbo"):
         con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
@@ -104,6 +104,8 @@ def create(unbalanced_entry: bool = False) -> duckdb.DuckDBPyConnection:
             "INSERT INTO gl.JournalLine (JournalLineId, JournalEntryId, LineNumber, AccountId, Debit, Credit) "
             "VALUES (15, 8, 1, 2, 5, 0), (16, 8, 2, 3, 0, 4)"
         )
+    if tax_entries:
+        _add_tax_entries(con)
     con.execute("""
         INSERT INTO ar.Item VALUES
           (1, 1, 1, 'clinichub', 'REF-1', 1, '2026-09-10', '2026-10-10', 100, 60, 30, 10),
@@ -117,3 +119,37 @@ def create(unbalanced_entry: bool = False) -> duckdb.DuckDBPyConnection:
 
 def table_names() -> list[str]:
     return [t.raw_name for t in FINANCE_TABLES]
+
+
+def _add_tax_entries(con: duckdb.DuckDBPyConnection) -> None:
+    """HST cases for Harbourview, on top of the base data (used by a separate warehouse so the
+    hand-computed numbers of the other tests do not move).
+
+    Expected, all HV unless said (posting month): sales by tax code
+      Sep: EXEMPT 150, HST13 100.   Oct: EXEMPT 200, ZERO 40, (none) -40 (refund and short-pay lines)
+    tax collected Sep 13;  purchases Oct HST13 200;  ITCs Oct 26.   LAB Oct: sales EXEMPT 70.
+    """
+    con.execute("""
+        INSERT INTO tax.TaxCode VALUES
+          ('ZERO', 'Zero-rated', 0, true, NULL), ('HST13', 'HST 13%', 13, true, NULL);
+        INSERT INTO gl.Account VALUES
+          (9, '2200', 'HST payable', 'Liability', 'TaxPayable', NULL, true, true, '2680', NULL),
+          (10, '1300', 'HST recoverable', 'Asset', 'TaxRecoverable', NULL, true, true, '2670', NULL),
+          (11, '2100', 'Accounts payable', 'Liability', 'Payable', NULL, true, true, '2600', NULL);
+        UPDATE gl.JournalLine SET TaxCode = 'EXEMPT' WHERE AccountId IN (3, 4);
+        INSERT INTO gl.JournalEntry (JournalEntryId, EntityId, Number, EntryDate, PeriodId, Source,
+                                     "Status", LatePosting) VALUES
+          (10, 1, 'JE10', '2026-09-15', 1, 'clinichub', 'Posted', false),
+          (11, 1, 'JE11', '2026-10-10', 2, 'manual', 'Posted', false),
+          (12, 1, 'JE12', '2026-10-12', 2, 'clinichub', 'Posted', false);
+        INSERT INTO gl.JournalLine (JournalLineId, JournalEntryId, LineNumber, AccountId, Debit, Credit,
+                                    PartyId, Department, ProviderCode, TaxCode) VALUES
+          (17, 10, 1, 2, 113, 0, 2, 'Clinic', NULL, NULL),
+          (18, 10, 2, 4, 0, 100, NULL, 'Clinic', NULL, 'HST13'),
+          (19, 10, 3, 9, 0, 13, NULL, NULL, NULL, 'HST13'),
+          (20, 11, 1, 8, 200, 0, NULL, 'Clinic', NULL, 'HST13'),
+          (21, 11, 2, 10, 26, 0, NULL, NULL, NULL, 'HST13'),
+          (22, 11, 3, 11, 0, 226, 5, NULL, NULL, NULL),
+          (23, 12, 1, 2, 40, 0, 2, 'Clinic', NULL, NULL),
+          (24, 12, 2, 4, 0, 40, NULL, 'Clinic', NULL, 'ZERO');
+    """)

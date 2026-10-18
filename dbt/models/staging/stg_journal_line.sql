@@ -6,7 +6,7 @@ select
     Debit::decimal(14, 2) as debit,
     Credit::decimal(14, 2) as credit,
     PartyId::integer as party_id,
-    Department as department,
-    ProviderCode as provider_code,
-    TaxCode as tax_code
+    Department::varchar as department,
+    ProviderCode::varchar as provider_code,
+    TaxCode::varchar as tax_code
 from {{ source('raw', 'gl_journalline') }}

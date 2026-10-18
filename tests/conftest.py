@@ -102,8 +102,26 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Settings]:
 
 
 @pytest.fixture(scope="session")
+def built_tax(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Settings]:
+    """A second warehouse: the synthetic source plus the HST cases (see synthetic_source)."""
+    settings = make_settings(tmp_path_factory.mktemp("pipeline_tax"))
+    extract_finance(
+        DuckDbSource(synthetic_source.create(tax_entries=True)),
+        settings,
+        now=datetime(2026, 10, 31, 12, tzinfo=UTC),
+    )
+    assert build(settings) == 0
+    yield settings
+
+
+@pytest.fixture(scope="session")
 def auth_settings(built: Settings, clinichub: FakeClinicHub) -> Settings:
     return built.model_copy(update={"oidc_issuer": ISSUER, "oidc_jwks_uri": clinichub.jwks_uri})
+
+
+@pytest.fixture(scope="session")
+def auth_settings_tax(built_tax: Settings, clinichub: FakeClinicHub) -> Settings:
+    return built_tax.model_copy(update={"oidc_issuer": ISSUER, "oidc_jwks_uri": clinichub.jwks_uri})
 
 
 @pytest.fixture

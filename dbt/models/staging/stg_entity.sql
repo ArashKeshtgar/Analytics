@@ -3,7 +3,7 @@ select
     Code as code,
     Name as name,
     Kind as kind,
-    HstNumber as hst_number,
+    HstNumber::varchar as hst_number,
     Province as province,
     IsDefault::boolean as is_default,
     IsActive::boolean as is_active,

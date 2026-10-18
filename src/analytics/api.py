@@ -100,6 +100,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "scope": scope,
         }
 
+    @app.get("/api/finance/businesses")
+    def businesses(scope: Annotated[Scope, Depends(current_scope)]) -> list[dict[str, Any]]:
+        """The businesses the caller may see; the dashboard's business filter."""
+        clauses, params = _business_clauses("d", scope, None)
+        where = ("where " + " and ".join(clauses)) if clauses else ""
+        sql = (
+            'select d.code, d.name, d.kind, d.clinic_slug as "clinicSlug" '
+            f"from main.dim_business d {where} order by d.code"
+        )
+        return query(sql, params)
+
+    @app.get("/api/finance/range")
+    def data_range(
+        scope: Annotated[Scope, Depends(current_scope)], business: str | None = None
+    ) -> dict[str, Any]:
+        """First and last month with revenue in the caller's scope (null when none)."""
+        clauses, params = _business_clauses("r", scope, business)
+        where = ("where " + " and ".join(clauses)) if clauses else ""
+        rows = query(
+            'select min(r.month) as "firstMonth", max(r.month) as "lastMonth" '
+            f"from main.mart_revenue_monthly r {where}",
+            params,
+        )
+        return rows[0]
+
     @app.get("/api/finance/revenue")
     def revenue(
         scope: Annotated[Scope, Depends(current_scope)],
@@ -138,6 +163,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "r.refused_rate::double as refused_rate "
             "from main.mart_ohip_collection r join main.dim_business b using (business_id) "
             f"{where} order by b.code, r.month"
+        )
+        return query(sql, params)
+
+    @app.get("/api/finance/ohip-providers")
+    def ohip_providers(
+        scope: Annotated[Scope, Depends(current_scope)],
+        business: str | None = None,
+        from_: Annotated[date | None, Query(alias="from")] = None,
+        to: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """OHIP billed (journal), short-paid and refused per provider over the range."""
+        where, params = _filters("r", scope, business, from_, to)
+        sql = (
+            "select r.provider_code as provider, "
+            "round(sum(r.billed), 2)::double as billed, "
+            "round(sum(r.short_paid), 2)::double as short_paid, "
+            "round(sum(r.refused), 2)::double as refused, "
+            "(case when sum(r.billed) > 0 "
+            "then round(sum(r.short_paid) / sum(r.billed), 4) end)::double as short_paid_rate, "
+            "(case when sum(r.billed) > 0 "
+            "then round(sum(r.refused) / sum(r.billed), 4) end)::double as refused_rate "
+            "from main.mart_ohip_provider_monthly r "
+            f"{where} group by 1 order by 2 desc, 1"
+        )
+        return query(sql, params)
+
+    @app.get("/api/finance/hst")
+    def hst(
+        scope: Annotated[Scope, Depends(current_scope)],
+        business: str | None = None,
+        from_: Annotated[date | None, Query(alias="from")] = None,
+        to: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Sales, purchases, tax collected and ITCs by month and tax code (see mart_hst_period)."""
+        where, params = _filters("r", scope, business, from_, to)
+        sql = (
+            'select r.month, r.tax_code as "taxCode", r.tax_name as "taxName", '
+            'r.rate_percent::double as "ratePercent", r.measure, '
+            "round(sum(r.amount), 2)::double as amount "
+            f"from main.mart_hst_period r {where} "
+            "group by 1, 2, 3, 4, 5 order by 1, 5, 2"
         )
         return query(sql, params)
 

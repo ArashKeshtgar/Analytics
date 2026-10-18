@@ -152,3 +152,13 @@ def test_api_before_the_warehouse_exists(
     settings = make_settings(tmp_path, oidc_jwks_uri=clinichub.jwks_uri)
     client = TestClient(create_app(settings), headers=group_headers)
     assert client.get("/api/finance/revenue").status_code == 503
+
+
+def test_a_source_with_no_tax_codes_or_departments_still_builds(tmp_path: Path) -> None:
+    """Parquet types an all-NULL column as null; staging casts it so the models do not guess integer."""
+    con = synthetic_source.create()
+    con.execute("UPDATE gl.JournalLine SET TaxCode = NULL, Department = NULL, ProviderCode = NULL")
+    con.execute("UPDATE gl.Account SET Subtype = NULL, GifiCode = NULL")
+    settings = make_settings(tmp_path)
+    extract_finance(DuckDbSource(con), settings, now=datetime(2026, 10, 31, 12, tzinfo=UTC))
+    assert build(settings) == 0
