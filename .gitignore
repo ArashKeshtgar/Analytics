@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+dbt/target/
+dbt/logs/
+node_modules/
+web/dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
