@@ -2,13 +2,22 @@ from datetime import date
 from typing import Annotated, Any
 
 import duckdb
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from analytics import __version__
+from analytics.auth import (
+    Forbidden,
+    Scope,
+    TokenVerifier,
+    Unauthorized,
+    Unavailable,
+    User,
+    scope_for,
+)
 from analytics.settings import Settings, get_settings
 
-# groupBy value -> (select expression, output name, order). Fixed list: nothing from the request
-# is ever placed in SQL text.
+# groupBy value -> select expression. Fixed list: nothing from the request goes into SQL text.
 _REVENUE_GROUPS = {
     "month": "r.month",
     "business": "b.code as business",
@@ -17,21 +26,49 @@ _REVENUE_GROUPS = {
 }
 
 _BUSINESS_FILTER = (
-    "r.business_id in (select business_id from main.dim_business "
+    "{a}.business_id in (select business_id from main.dim_business "
     "where lower(code) = lower(?) or lower(clinic_slug) = lower(?))"
+)
+_SCOPE_FILTER = (
+    "{a}.business_id in (select business_id from main.dim_business "
+    "where lower(clinic_slug) = lower(?))"
 )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    config = settings or get_settings()
+    verifier = TokenVerifier(config)
     app = FastAPI(title="Analytics", version=__version__)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[config.web_origin],
+        allow_methods=["GET"],
+        allow_headers=["Authorization"],
+    )
+
+    def current_user(request: Request) -> User:
+        header = request.headers.get("Authorization", "")
+        if header[:7].lower() != "bearer " or not header[7:].strip():
+            raise HTTPException(401, "Sign in.", headers={"WWW-Authenticate": "Bearer"})
+        try:
+            return verifier.verify(header[7:].strip())
+        except Unauthorized as exc:
+            raise HTTPException(
+                401, "The access token was not accepted.", headers={"WWW-Authenticate": "Bearer"}
+            ) from exc
+        except Unavailable as exc:
+            raise HTTPException(503, "Tokens cannot be verified right now.") from exc
+
+    def current_scope(user: Annotated[User, Depends(current_user)]) -> Scope:
+        try:
+            return scope_for(user)
+        except Forbidden as exc:
+            raise HTTPException(403, "No permission to view finance data.") from exc
 
     def query(sql: str, params: list[Any]) -> list[dict[str, Any]]:
-        # Sign-in and clinic scoping arrive in phase 2: until then these endpoints are open and
-        # the service listens on localhost only.
-        path = (settings or get_settings()).warehouse_path
-        if not path.is_file():
+        if not config.warehouse_path.is_file():
             raise HTTPException(503, "The warehouse is not built yet. Run `analytics build`.")
-        con = duckdb.connect(str(path), read_only=True)
+        con = duckdb.connect(str(config.warehouse_path), read_only=True)
         try:
             cursor = con.execute(sql, params)
             names = [c[0] for c in cursor.description]
@@ -49,8 +86,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def version() -> dict[str, str]:
         return {"name": "analytics", "version": __version__}
 
+    @app.get("/api/me")
+    def me(user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+        """Who the token says you are and what you may see; any valid token."""
+        try:
+            scope = "group" if scope_for(user).group else "clinic"
+        except Forbidden:
+            scope = "none"
+        return {
+            "name": user.name,
+            "clinicSlug": user.clinic_slug,
+            "permissions": sorted(user.permissions),
+            "scope": scope,
+        }
+
     @app.get("/api/finance/revenue")
     def revenue(
+        scope: Annotated[Scope, Depends(current_scope)],
         business: str | None = None,
         from_: Annotated[date | None, Query(alias="from")] = None,
         to: date | None = None,
@@ -61,22 +113,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not keys or unknown:
             raise HTTPException(422, f"groupBy must be a list of: {', '.join(_REVENUE_GROUPS)}")
         columns = ", ".join(_REVENUE_GROUPS[k] for k in keys)
-        where, params = _filters(business, from_, to)
+        positions = ", ".join(str(i + 1) for i in range(len(keys)))
+        where, params = _filters("r", scope, business, from_, to)
         sql = (
             f"select {columns}, round(sum(r.revenue), 2)::double as revenue "
             "from main.mart_revenue_monthly r join main.dim_business b using (business_id) "
-            f"{where} group by {', '.join(str(i + 1) for i in range(len(keys)))} "
-            f"order by {', '.join(str(i + 1) for i in range(len(keys)))}"
+            f"{where} group by {positions} order by {positions}"
         )
         return query(sql, params)
 
     @app.get("/api/finance/ohip-collection")
     def ohip_collection(
+        scope: Annotated[Scope, Depends(current_scope)],
         business: str | None = None,
         from_: Annotated[date | None, Query(alias="from")] = None,
         to: date | None = None,
     ) -> list[dict[str, Any]]:
-        where, params = _filters(business, from_, to)
+        where, params = _filters("r", scope, business, from_, to)
         sql = (
             "select b.code as business, r.month, "
             "r.billed::double as billed, r.paid::double as paid, r.adjusted::double as adjusted, "
@@ -90,6 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/finance/aging")
     def aging(
+        scope: Annotated[Scope, Depends(current_scope)],
         business: str | None = None,
         as_of: Annotated[date | None, Query(alias="asOf")] = None,
         side: str = "receivable",
@@ -101,11 +155,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if as_of:
             cte_extra = " and snapshot_date <= ?"
             cte_params.append(as_of)
-        main_params: list[Any] = [side]
-        biz = ""
-        if business:
-            biz = " and " + _BUSINESS_FILTER.replace("r.business_id", "s.business_id")
-            main_params += [business, business]
+        clauses, filter_params = _business_clauses("s", scope, business)
+        where = "".join(f" and {c}" for c in clauses)
         sql = (
             "with latest as (select max(snapshot_date) as d from main.fact_open_item_snapshot "
             f"where side = ?{cte_extra}) "
@@ -114,25 +165,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "from main.fact_open_item_snapshot s join latest on s.snapshot_date = latest.d "
             "join main.dim_business b on b.business_id = s.business_id "
             "join main.dim_party p on p.party_id = s.party_id "
-            f"where s.side = ?{biz} "
+            f"where s.side = ?{where} "
             "group by 1, 2, 3, 4 order by 1, 2, 3"
         )
-        return query(sql, cte_params + main_params)
+        return query(sql, [*cte_params, side, *filter_params])
 
     return app
 
 
-def _filters(business: str | None, from_: date | None, to: date | None) -> tuple[str, list[Any]]:
+def _business_clauses(
+    alias: str, scope: Scope, business: str | None
+) -> tuple[list[str], list[Any]]:
+    """The clinic in the token always applies; a `business` in the request narrows it further, so
+    asking for another clinic gives an empty answer, not that clinic's numbers."""
     clauses: list[str] = []
     params: list[Any] = []
+    if not scope.group:
+        clauses.append(_SCOPE_FILTER.format(a=alias))
+        params.append(scope.clinic_slug)
     if business:
-        clauses.append(_BUSINESS_FILTER)
+        clauses.append(_BUSINESS_FILTER.format(a=alias))
         params += [business, business]
+    return clauses, params
+
+
+def _filters(
+    alias: str, scope: Scope, business: str | None, from_: date | None, to: date | None
+) -> tuple[str, list[Any]]:
+    clauses, params = _business_clauses(alias, scope, business)
     if from_:
-        clauses.append("r.month >= date_trunc('month', ?::date)")
+        clauses.append(f"{alias}.month >= date_trunc('month', ?::date)")
         params.append(from_)
     if to:
-        clauses.append("r.month <= ?::date")
+        clauses.append(f"{alias}.month <= ?::date")
         params.append(to)
     return (("where " + " and ".join(clauses)) if clauses else ""), params
 

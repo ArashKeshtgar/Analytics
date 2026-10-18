@@ -205,3 +205,18 @@ CREATE TABLE dbo.AccountingPeriods (
 7. What does `/api/reports/trial-balance` return (fields, rounding)? The cross-check test against a recorded
    answer is **not built** until a sample answer is pasted here.
 
+## ClinicHub tokens (phase 2)
+
+Issuer `http://localhost:5301/`, keys at `{issuer}.well-known/jwks` (same as IntegrationHub's contracts). Questions;
+phase 2 assumed the answer in brackets. Check with the payload of a real token for a user signed in to the `analytics`
+client (the part between the dots, base64url, without the signature).
+
+1. Signing algorithm. [`RS256`]
+2. Claim `permission`: a JSON array when a user has several, a string when one; values like `analytics:dashboard.view`.
+   [Either is read.]
+3. Claim `clinic_slug`: present for a clinic user, with the same value as `org.EntitySource.SourceKey` of the ClinicHub
+   source (e.g. `harbourview`). [Yes; the match is case-insensitive.] What does a group user (several clinics) get?
+   [Nothing needed: `group.view` does not look at it.]
+4. Claim `name`: the display name. [Used only for `/api/me`.]
+5. `aud` of an access token for the `analytics` client. [Unknown: not checked until `ANALYTICS_OIDC_AUDIENCE` is set.]
+

@@ -18,8 +18,20 @@ class Settings(BaseSettings):
     finance_connection_string: str = ""
     # ClinicHub sign-in (phase 2).
     oidc_issuer: str = "http://localhost:5301/"
+    # Empty: {issuer}.well-known/jwks
+    oidc_jwks_uri: str = ""
+    # Empty: the audience of the token is not checked (not known yet, see docs/sources.md).
+    oidc_audience: str = ""
+    # The dashboard (phase 3) calls the API from this origin.
+    web_origin: str = "http://localhost:5601"
     # RabbitMQ feed from IntegrationHub (phase 4).
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+
+    @property
+    def effective_jwks_uri(self) -> str:
+        if self.oidc_jwks_uri:
+            return self.oidc_jwks_uri
+        return self.oidc_issuer.rstrip("/") + "/.well-known/jwks"
 
 
 @lru_cache

@@ -8,7 +8,6 @@ Expected values (see tests/synthetic_source.py), Harbourview (HV) and the lab (L
   ageing, receivable, HV: balances item1 10 (due Oct 10), item2 200 (due Nov 4), item3 50 (Oct 20)
 """
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,29 +22,12 @@ from analytics.settings import Settings
 from analytics.sources import DuckDbSource
 from analytics.warehouse import build
 from tests import synthetic_source
-
-
-def make_settings(root: Path) -> Settings:
-    return Settings(
-        data_dir=root / "data",
-        warehouse_path=root / "data" / "warehouse.duckdb",
-        dbt_project_dir=Path("dbt"),
-        _env_file=None,  # type: ignore[call-arg]
-    )
-
-
-@pytest.fixture(scope="module")
-def built(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Settings]:
-    settings = make_settings(tmp_path_factory.mktemp("pipeline"))
-    for day in (datetime(2026, 10, 31, 12, tzinfo=UTC), datetime(2026, 11, 15, 12, tzinfo=UTC)):
-        extract_finance(DuckDbSource(synthetic_source.create()), settings, now=day)
-    assert build(settings) == 0
-    yield settings
+from tests.conftest import FakeClinicHub, make_settings
 
 
 @pytest.fixture
-def client(built: Settings) -> TestClient:
-    return TestClient(create_app(built))
+def client(auth_settings: Settings, group_headers: dict[str, str]) -> TestClient:
+    return TestClient(create_app(auth_settings), headers=group_headers)
 
 
 def rows(client: TestClient, url: str, **params: Any) -> list[dict[str, Any]]:
@@ -164,6 +146,9 @@ def test_build_without_an_extract_says_so(
     assert "analytics extract finance" in capsys.readouterr().err
 
 
-def test_api_before_the_warehouse_exists(tmp_path: Path) -> None:
-    client = TestClient(create_app(make_settings(tmp_path)))
+def test_api_before_the_warehouse_exists(
+    tmp_path: Path, clinichub: FakeClinicHub, group_headers: dict[str, str]
+) -> None:
+    settings = make_settings(tmp_path, oidc_jwks_uri=clinichub.jwks_uri)
+    client = TestClient(create_app(settings), headers=group_headers)
     assert client.get("/api/finance/revenue").status_code == 503

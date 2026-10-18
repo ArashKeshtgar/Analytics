@@ -50,7 +50,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 |---|---|---|
 | 0 | Skeleton: package, CLI, health, CI, Docker | **Done** |
 | 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
-| 2 | Sign-in through ClinicHub, clinic-scoped access | Not started |
+| 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | Not started |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | Not started |
 | 5 | Forecasts and anomalies, with backtests and model cards | Not started |
@@ -135,6 +135,37 @@ exits with code 2 and says it is not built (phase 1). Not yet seen running: the 
 - **Other repositories:** ClinicHub — register client `analytics` in `Sso:Clients` (redirects
   `http://localhost:5601/signin-oidc`), add the three permissions to the permission list and to the built-in roles
   (Administrator: all; Physician: dashboard.view). See how `labflow:*` was added there.
+
+**Built (this repository):**
+
+- The API checks ClinicHub access tokens (`auth.py`): RS256 signature against `{issuer}.well-known/jwks`
+  (`ANALYTICS_OIDC_JWKS_URI` overrides), issuer, expiry (60 s leeway), `sub`; the audience only when
+  `ANALYTICS_OIDC_AUDIENCE` is set. `alg: none`, HS256 and unknown `kid` are refused. No token or a bad one is `401`
+  with `WWW-Authenticate: Bearer`; ClinicHub's keys unreachable is `503`; a valid token without a finance permission is
+  `403`. The token is never logged or echoed.
+- `permission` (a list or one space-separated string), `clinic_slug` and `name` are read from the token.
+  `analytics:group.view` sees every business. `analytics:dashboard.view` sees only the business whose
+  `dim_business.clinic_slug` equals the token's `clinic_slug` (case-insensitive); with no `clinic_slug` it is `403`.
+  The clinic from the token always applies; a `business` in the request narrows it further, so asking for another
+  clinic gives an empty list, not an error and not that clinic's numbers. This holds for revenue, OHIP collection and
+  ageing.
+- `GET /api/me`: name, clinic, permissions and `scope` (`group`, `clinic` or `none`) for any valid token; the dashboard
+  uses it to decide what to show. `/healthz` and `/api/version` stay open.
+- CORS: only `ANALYTICS_WEB_ORIGIN` (default `http://localhost:5601`), `GET`, `Authorization`.
+- There is no switch to turn authentication off. To call the API by hand you need a ClinicHub token.
+- Tests (52 in all, 24 for this phase) sign tokens with a key generated per run and serve the JWKS from a local HTTP
+  server, so the real key fetching is exercised. Checked by breaking the clinic filter: three tests fail.
+
+**Not built, said plainly:**
+
+- The web's sign-in (authorization code + PKCE, `/signin-oidc`): there is no web yet. It is the first item of phase 3.
+- `analytics:models.view` is recognised (and shown by `/api/me`) but guards nothing: the model pages are phase 5.
+- No revocation or session handling: a token is good until it expires; the keys are cached by PyJWT (5 minutes).
+- Never run against a real ClinicHub token (see the questions in sources.md).
+
+**Other repositories — to do locally, not done:** the ClinicHub change in the item above, and in addition that the
+`analytics` client's access tokens must carry the claims `permission` and `clinic_slug` (OpenIddict only puts a claim
+in the token if it has the `access_token` destination; check how `labflow:*` and `clinic_slug` get there).
 
 ### Phase 3 — Dashboard
 
