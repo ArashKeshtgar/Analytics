@@ -127,6 +127,20 @@ export interface ForecastResponse {
   series: ForecastSeries[];
 }
 
+/** /api/meta/runs: one `analytics run` report, as written to data/runs/ (group users only). */
+export interface RunReport {
+  run_id: string;
+  started_utc: string;
+  finished_utc: string;
+  status: 'ok' | 'warning' | 'failed' | 'running';
+  steps: { name: string; status: 'ok' | 'skipped' | 'failed'; seconds: number; detail: string }[];
+  tables: { name: string; rows: number; previous: number | null }[];
+  checks: { level: 'warning' | 'error'; kind: string; subject: string; message: string }[];
+  warehouse_replaced: boolean;
+  /** What the alert webhook was told about the run: failed, recovered, or nothing. */
+  alert?: string;
+}
+
 /** /api/finance/ohip-anomalies: a flagged provider-month and the numbers behind the flag. */
 export interface OhipAnomaly {
   business: string;

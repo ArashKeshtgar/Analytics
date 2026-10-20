@@ -13,6 +13,7 @@ from analytics.events import consume as consume_events
 from analytics.extract import extract_finance
 from analytics.pipeline import Report, describe_failure
 from analytics.pipeline import run as run_pipeline
+from analytics.retention import prune as prune_data
 from analytics.scoring import ScoreError
 from analytics.scoring import score as score_warehouse
 from analytics.settings import get_settings
@@ -105,6 +106,20 @@ def run() -> None:
     print_report(report)
     if report.status == "failed":
         raise typer.Exit(code=1)
+
+
+@app.command()
+def prune(
+    dry_run: Annotated[bool, typer.Option(help="Say what would go, delete nothing.")] = False,
+) -> None:
+    """Delete old finance extracts (one per day is kept) and old run reports; see the settings."""
+    result = prune_data(get_settings(), dry_run=dry_run)
+    verb = "would delete" if dry_run else "deleted"
+    typer.echo(f"{verb}: {result.describe()}")
+    for name in result.extracts:
+        typer.echo(f"  extract {name}")
+    for name in result.reports:
+        typer.echo(f"  report  {name}")
 
 
 def parse_every(text: str) -> timedelta:

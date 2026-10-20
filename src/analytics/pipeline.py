@@ -24,7 +24,9 @@ from typing import Any
 
 import duckdb
 
+from analytics.alerts import notify
 from analytics.extract import extract_finance
+from analytics.retention import prune
 from analytics.scoring import score
 from analytics.settings import Settings
 from analytics.sources import SqlServerSource
@@ -66,6 +68,7 @@ class Report:
     failed_tests: list[dict[str, Any]] = field(default_factory=list)
     checks: list[Check] = field(default_factory=list)
     warehouse_replaced: bool = False
+    alert: str = ""  # what the webhook was told about this run: failed, recovered or nothing
 
 
 def runs_dir(settings: Settings) -> Path:
@@ -260,11 +263,14 @@ def run(
         report.warehouse_replaced = True
     else:
         aside.unlink(missing_ok=True)
+    # Old data goes after every run, a failed one too (its partial extract is the first to go).
+    _step(report, "prune", lambda: prune(settings, now=started).describe())
     report.finished_utc = datetime.now(UTC).isoformat()
     if not report.warehouse_replaced:
         report.status = "failed"
     else:
         report.status = "warning" if report.checks else "ok"
+    report.alert = notify(report, load_reports(settings), settings)
     write_report(settings, report)
     return report
 

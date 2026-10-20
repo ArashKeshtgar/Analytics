@@ -413,13 +413,22 @@ the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no
 
 **Not built or not known, said plainly:**
 
-- **No extract in ControlPanel yet:** FinancePowerApp has no `analytics_reader` login (phase 1's open item), so the
-  scheduler there runs and fails every interval with "no finance extract yet". Create the login, then set
-  `ANALYTICS_FINANCE_CONNECTION_STRING` in ControlPanel's `.env`.
-- No page for the run reports; they are an API for now (and ControlPanel shows the containers' state, not the reports).
-- No alert when a run fails: the report and the scheduler's log say so, nobody is told.
-- Old reports and old finance extracts are never deleted; the open-item history is rebuilt from the extracts, so they are
-  kept on purpose, but `data/` grows by one extract per run.
+- **Extract in ControlPanel (21 Oct 2026):** FinancePowerApp's `analytics_reader` login now exists on the development SQL Server (`database/tools/analytics_reader.sql` there, run with a generated password kept only in ControlPanel's `.env`). The scheduler's run built, tested (56 dbt checks) and swapped in a warehouse from 12 tables / 189 rows; the login reads the tables but is refused `org.Party.Email`. Not done for any other server.
+- **Alert on a failed run (`alerts.py`, 21 Oct 2026):** with `ANALYTICS_ALERT_WEBHOOK_URL` set, the first failed run is
+  sent as a JSON POST (`text`, `state`, `runId`, `failedSteps`, `errors`), a run that keeps failing is sent again after
+  `ANALYTICS_ALERT_REPEAT_HOURS` (24), and the first good run after a told failure says it works again. What was told
+  is kept in the run's report (`alert`), so there is no other state; a webhook that is down is tried again by the next
+  run, and a failed POST never fails the run. The URL is never logged. Tested with a stand-in webhook; **not tried
+  against a real chat tool or receiver**, and there is no e-mail.
+- **Old data (`retention.py`, `analytics prune [--dry-run]`, also the last step of every run):** finance extracts older
+  than `ANALYTICS_KEEP_EXTRACT_DAYS` (14) keep only the last complete one of each day, which is what the open-item
+  history is built from, so the history loses nothing; partial extracts past the window go too. Reports: the newest
+  `ANALYTICS_KEEP_REPORTS` (200) and always the last one that replaced the warehouse. 0 keeps everything. Within the
+  window every extract stays. Not pruned: the event files, `data/dbt/logs`, `meta.load_run` rows.
+- **Runs page** (`web/src/pages/Runs.tsx`, `/runs`, group permission only): the latest run's status, when the dashboard's
+  data is from, the last 50 runs, and the steps, checks and tables of the latest, each with CSV. Tested with a mocked API
+  (4 tests); **not looked at in a browser yet**, and the containers in ControlPanel run the image from before this
+  change until they are rebuilt.
 - The consumer in ControlPanel needs a RabbitMQ the container can reach with a real account (not `guest`, see phase 4).
 
 ## Not in scope

@@ -56,7 +56,7 @@ function FilterBar() {
   const { pathname } = useLocation();
   const showBusiness = me.scope === 'group' && pathname !== '/group' && businesses.length > 1;
   // The forecast has its own months and its own series picker: none of these filters apply there.
-  if (pathname === '/forecast') return null;
+  if (pathname === '/forecast' || pathname === '/runs') return null;
   return (
     <div className="filters" role="group" aria-label="Filters">
       <div className="presets">
@@ -95,6 +95,7 @@ export function Layout() {
     { to: '/operations', label: 'Operations' },
     ...(me.scope === 'group' ? [{ to: '/group', label: 'Group' }] : []),
     ...(me.permissions.includes(MODELS_VIEW) ? [{ to: '/forecast', label: 'Forecast' }] : []),
+    ...(me.scope === 'group' ? [{ to: '/runs', label: 'Runs' }] : []),
   ];
   return (
     <div className="app">

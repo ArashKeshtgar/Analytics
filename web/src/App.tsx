@@ -8,6 +8,7 @@ import { Ohip } from './pages/Ohip';
 import { Operations } from './pages/Operations';
 import { Overview } from './pages/Overview';
 import { Receivables } from './pages/Receivables';
+import { Runs } from './pages/Runs';
 import { DashboardProvider } from './state/Dashboard';
 
 function Center({ children }: { children: React.ReactNode }) {
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="operations" element={<Operations />} />
               <Route path="group" element={<Group />} />
               <Route path="forecast" element={<Forecast />} />
+              <Route path="runs" element={<Runs />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

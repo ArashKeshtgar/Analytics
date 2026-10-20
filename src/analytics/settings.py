@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     consume_flush_seconds: float = 5.0
     # `analytics schedule` (phase 6): how often `analytics run` runs, e.g. 30m, 6h, 1d.
     run_every: str = "6h"
+    # Told when a run fails and when it works again (JSON POST, `text` and details). Empty: nobody.
+    alert_webhook_url: str = ""
+    # A run that keeps failing is told again after this many hours.
+    alert_repeat_hours: int = 24
+    # Finance extracts older than this many days keep only the last one of each day (what the
+    # open-item history is built from); 0 keeps everything.
+    keep_extract_days: int = 14
+    # Run reports kept (newest first, and always the last good one); 0 keeps everything.
+    keep_reports: int = 200
 
     @property
     def effective_jwks_uri(self) -> str:

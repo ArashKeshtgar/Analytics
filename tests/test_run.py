@@ -67,6 +67,7 @@ def test_a_run_extracts_builds_scores_and_swaps_the_warehouse_in(
         ("build", "ok"),
         ("score", "ok"),
         ("replace", "ok"),
+        ("prune", "ok"),
     ]
     assert first.warehouse_replaced and settings.warehouse_path.is_file()
     assert not next_path(settings).exists()
@@ -99,7 +100,11 @@ def test_a_failed_run_keeps_the_last_good_warehouse(
     before = settings.warehouse_path.read_bytes()
     report = run(settings, now=DAY + timedelta(days=1), extractor=failing)
     assert report.status == "failed" and not report.warehouse_replaced
-    assert [(s.name, s.status) for s in report.steps] == [("prepare", "ok"), ("extract", "failed")]
+    assert [(s.name, s.status) for s in report.steps] == [
+        ("prepare", "ok"),
+        ("extract", "failed"),
+        ("prune", "ok"),
+    ]
     assert report.steps[1].detail == "ConnectionError: the finance server did not answer"
     assert [c.kind for c in report.checks] == ["step"]
     assert settings.warehouse_path.read_bytes() == before
@@ -120,7 +125,7 @@ def test_with_nothing_extracted_ever_the_run_fails_and_says_why(tmp_path: Path) 
     settings = make_settings(tmp_path)
     report = run(settings, now=DAY)
     assert report.status == "failed"
-    assert [s.status for s in report.steps] == ["ok", "skipped", "failed"]
+    assert [s.status for s in report.steps] == ["ok", "skipped", "failed", "ok"]
     assert not settings.warehouse_path.exists() and not next_path(settings).exists()
 
 
