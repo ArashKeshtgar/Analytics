@@ -1,9 +1,8 @@
 -- Read-only login for Analytics on the FinancePowerApp database.
 --
--- This is the text of FinancePowerApp's `database/050_analytics_reader.sql`. FinancePowerApp has no GitHub
--- remote and is not visible from the cloud session, so the script lives here until it is copied there.
--- NOT RUN against SQL Server by the session that wrote it: run it on a development server first.
---
+-- The script now lives in FinancePowerApp as `database/tools/analytics_reader.sql` (run there with
+-- `-v ReaderPassword=...`); this copy is kept for the cloud session, which cannot see that repository.
+-- It was run on the development server on 2026-10-20.
 -- Run as a sysadmin / db_owner. Set the password before running; never commit it.
 
 USE master;

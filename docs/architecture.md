@@ -427,9 +427,11 @@ the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no
   window every extract stays. Not pruned: the event files, `data/dbt/logs`, `meta.load_run` rows.
 - **Runs page** (`web/src/pages/Runs.tsx`, `/runs`, group permission only): the latest run's status, when the dashboard's
   data is from, the last 50 runs, and the steps, checks and tables of the latest, each with CSV. Tested with a mocked API
-  (4 tests); **not looked at in a browser yet**, and the containers in ControlPanel run the image from before this
-  change until they are rebuilt.
-- The consumer in ControlPanel needs a RabbitMQ the container can reach with a real account (not `guest`, see phase 4).
+  (4 tests); seen in the browser on 21 Oct 2026 after the ControlPanel images were rebuilt (signed in through ClinicHub
+  as the demo administrator; the runs, the `prune` step and the table changes as listed).
+- **Consumer in ControlPanel (21 Oct 2026):** runs with `--profile events` and its own RabbitMQ account `analytics`
+  (permissions as in [The RabbitMQ account](#the-rabbitmq-account), commands in ControlPanel's `.env.example`). It took
+  the events the real applications made through IntegrationHub that day, and the next run built them into `fact_order`.
 
 ## Not in scope
 
