@@ -114,6 +114,25 @@ def create(unbalanced_entry: bool = False, tax_entries: bool = False) -> duckdb.
         INSERT INTO ap.Item VALUES
           (1, 1, 5, 'manual', 'BILL-1', NULL, '2026-09-01', '2026-09-30', 40, 0, 40);
     """)
+    # FinancePowerApp's two report views the reconciliation reads (database/030_reports.sql there),
+    # without the columns it does not use.
+    con.execute("""
+        CREATE VIEW gl.vw_PeriodMovement AS
+        SELECT e.EntityId, e.PeriodId, l.AccountId, SUM(l.Debit) AS Debit, SUM(l.Credit) AS Credit,
+               SUM(l.Debit - l.Credit) AS Net
+        FROM gl.JournalLine l JOIN gl.JournalEntry e ON e.JournalEntryId = l.JournalEntryId
+        WHERE e."Status" IN ('Posted', 'Reversed')
+        GROUP BY e.EntityId, e.PeriodId, l.AccountId;
+        CREATE VIEW tax.vw_HstReturn AS
+        SELECT e.EntityId, e.PeriodId,
+               SUM(CASE WHEN a.Subtype = 'TaxPayable' THEN l.Credit - l.Debit ELSE 0 END) AS Line103TaxCollected,
+               SUM(CASE WHEN a.Subtype = 'TaxRecoverable' THEN l.Debit - l.Credit ELSE 0 END)
+                 AS Line106InputTaxCredits
+        FROM gl.JournalLine l JOIN gl.JournalEntry e ON e.JournalEntryId = l.JournalEntryId
+        JOIN gl.Account a ON a.AccountId = l.AccountId
+        WHERE e."Status" IN ('Posted', 'Reversed')
+        GROUP BY e.EntityId, e.PeriodId;
+    """)
     return con
 
 

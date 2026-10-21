@@ -51,7 +51,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 0 | Skeleton: package, CLI, health, CI, Docker | **Done** |
 | 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
 | 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
-| 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**, except the comparison with FinancePowerApp's own reports (see below) |
+| 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**; compared with FinancePowerApp's own reports on every run since phase 6 |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**, except the optional LabFlow `dw` source |
 | 5 | Forecasts and anomalies, with backtests and model cards | **Done**, not yet run on real books (one month in FinancePowerApp) |
 | 6 | Scheduling, data-quality checks, platform compose | **Done**; seen in ControlPanel's compose, extract not configured there (no `analytics_reader` login yet) |
@@ -209,11 +209,10 @@ permissions **without** the prefix (`dashboard.view`); Analytics reads both form
 
 **Not built, said plainly:**
 
-- **"Numbers match FinancePowerApp's own reports — a test checks one of each" is not done.** There is no recorded
-  answer of those reports in this repository and no access to FinancePowerApp. The numbers are checked against
-  hand-computed expectations of the synthetic data only. The HST page is read from the journal and is **not** the
-  GST34 return: no line numbers, the filing period is not known, and it has not been compared with FinancePowerApp's
-  HST report (the page says so). Questions are in sources.md.
+- ~~"Numbers match FinancePowerApp's own reports"~~ **done in phase 6 (21 Oct 2026), see [Reconciliation](#reconciliation-with-financepowerapps-own-reports).**
+  The HST page is still read from the journal and is **not** the GST34 return (no line numbers, the filing period is
+  not known), but its tax collected and ITCs per business and month now agree with FinancePowerApp's
+  `tax.vw_HstReturn` lines 103 and 106 on every run.
 - Days to pay (no payment date in the source) and "paid" by provider.
 - Texture fills for print and forced colors; an automated accessibility audit; screen-reader testing.
 - Silent token renewal, ending the ClinicHub session on sign-out, a production build served by anything but
@@ -432,6 +431,32 @@ the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no
 - **Consumer in ControlPanel (21 Oct 2026):** runs with `--profile events` and its own RabbitMQ account `analytics`
   (permissions as in [The RabbitMQ account](#the-rabbitmq-account), commands in ControlPanel's `.env.example`). It took
   the events the real applications made through IntegrationHub that day, and the next run built them into `fact_order`.
+
+#### Reconciliation with FinancePowerApp's own reports
+
+`reconcile.py`, a `reconcile` step after every build that read the books in the same run (skipped otherwise), and
+`analytics reconcile` for the live warehouse. FinancePowerApp is asked for its own totals and they are compared figure
+by figure (to the cent) with the marts:
+
+| Figure | FinancePowerApp | Analytics |
+|---|---|---|
+| Revenue per business and posting month | `gl.vw_PeriodMovement` on `Revenue` accounts, credits minus debits | `mart_revenue_monthly` |
+| HST collected, ITCs per business and month | `tax.vw_HstReturn` lines 103 and 106 | `mart_hst_period` (`tax_collected`, `itc`) |
+| Owed to / by each business | `ar.Item` / `ap.Item` `Balance` | latest `fact_open_item_snapshot` |
+
+A figure on one side only counts as zero on the other. A difference is a **warning** (status `warning`, check kind
+`reconcile`, on the Runs page): the books can move in the seconds between the extract and these queries. A
+reconciliation that cannot run (the login refused, the server gone) is an error check; the data still goes in.
+
+- The two views are the only ones `analytics_reader` may read: the others carry text, and ownership chaining would
+  let them past the column DENYs (FinancePowerApp's `database/tools/analytics_reader.sql`, fixed 21 Oct 2026).
+- **Run against the real books (21 Oct 2026):** 21 figures. The first comparison found 2 differences (Harbourview's
+  October revenue and receivables, business 2: 138.00 against 100.05); they were a visit signed in ClinicHub after the
+  last run (37.95). After the next run: 21 compared, 0 differ.
+- Tests: 5 (the synthetic books agree; books that moved after the extract give exactly the two warnings; a refused
+  reconciliation is an error and the warehouse is still replaced; skipped without books; one-sided figures).
+- Not compared: the income statement's expense side, the balance sheet, OHIP collection by provider (FinancePowerApp
+  has no such report), and anything per party.
 
 ## Not in scope
 

@@ -65,6 +65,7 @@ def test_a_run_extracts_builds_scores_and_swaps_the_warehouse_in(
         ("prepare", "ok"),
         ("extract", "ok"),
         ("build", "ok"),
+        ("reconcile", "skipped"),  # test_reconcile.py gives it the books
         ("score", "ok"),
         ("replace", "ok"),
         ("prune", "ok"),

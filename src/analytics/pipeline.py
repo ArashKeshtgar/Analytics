@@ -26,6 +26,7 @@ import duckdb
 
 from analytics.alerts import notify
 from analytics.extract import extract_finance
+from analytics.reconcile import Reconciler, sql_server_reconcile
 from analytics.retention import prune
 from analytics.scoring import score
 from analytics.settings import Settings
@@ -208,6 +209,7 @@ def run(
     settings: Settings,
     now: datetime | None = None,
     extractor: Extractor | None = None,
+    reconciler: Reconciler | None = None,
 ) -> Report:
     started = (now or datetime.now(UTC)).astimezone(UTC)
     report = Report(run_id=run_id_for(started), started_utc=started.isoformat())
@@ -240,6 +242,16 @@ def run(
             raise RuntimeError("dbt build failed: see the failed tests and the dbt log")
         return "models and tests passed"
 
+    def reconcile_step() -> str:
+        # Only against the books this run just read (the extract and these queries: seconds apart).
+        if reconciler is None and (extractor is not None or not settings.finance_connection_string):
+            return "skipped: nothing extracted from FinancePowerApp in this run"
+        result = (reconciler or sql_server_reconcile)(work)
+        report.checks.extend(
+            Check("warning", "reconcile", d.subject(), d.message()) for d in result.differences
+        )
+        return result.describe()
+
     def score_step() -> str:
         s = score(work)
         return f"{s.forecasts} of {s.series} series forecast, {s.flagged} remittance flags"
@@ -248,6 +260,9 @@ def run(
     built = ok and _step(report, "build", build_step)
     # The tests that failed are worth reporting even when the build as a whole failed.
     report.failed_tests = dbt_failures(work) if ok else []
+    if built:
+        # A difference, or a reconciliation that could not run, is reported; the run goes on.
+        _step(report, "reconcile", reconcile_step)
     scored = built and _step(report, "score", score_step)
     previous = last_good_counts(settings)
     if aside.is_file() and ok:

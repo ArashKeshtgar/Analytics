@@ -42,6 +42,6 @@ Images: `docker build -t analytics .` and `docker build -t analytics-web web` (b
 - [x] Phase 3 — dashboard: revenue, OHIP collection, receivables, HST
 - [x] Phase 4 — operations from IntegrationHub events: turnaround, cancellations
 - [x] Phase 5 — revenue forecasts and remittance anomalies, with backtests and model cards ([docs/models](docs/models)); not yet run on real books
-- [x] Phase 6 — `analytics run` / `analytics schedule`, a data-quality report per run (`/api/meta/runs`), images in CI, ControlPanel compose with the extract from FinancePowerApp's `analytics_reader` login, a webhook alert when a run fails (`ANALYTICS_ALERT_WEBHOOK_URL`), the Runs page, `analytics prune` for old extracts and reports
+- [x] Phase 6 — `analytics run` / `analytics schedule`, a data-quality report per run (`/api/meta/runs`), images in CI, ControlPanel compose with the extract from FinancePowerApp's `analytics_reader` login, a webhook alert when a run fails (`ANALYTICS_ALERT_WEBHOOK_URL`), the Runs page, `analytics prune` for old extracts and reports, a reconciliation with FinancePowerApp's own reports on every run (`analytics reconcile`)
 
 All data in tests and samples is synthetic.

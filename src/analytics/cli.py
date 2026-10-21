@@ -13,6 +13,7 @@ from analytics.events import consume as consume_events
 from analytics.extract import extract_finance
 from analytics.pipeline import Report, describe_failure
 from analytics.pipeline import run as run_pipeline
+from analytics.reconcile import sql_server_reconcile
 from analytics.retention import prune as prune_data
 from analytics.scoring import ScoreError
 from analytics.scoring import score as score_warehouse
@@ -105,6 +106,24 @@ def run() -> None:
     report = run_pipeline(get_settings())
     print_report(report)
     if report.status == "failed":
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def reconcile() -> None:
+    """Compare the live warehouse with FinancePowerApp's own totals now (revenue, HST, balances).
+
+    Every run does this right after its build; on its own the books may have moved since then.
+    """
+    settings = get_settings()
+    if not settings.finance_connection_string:
+        typer.echo("Set ANALYTICS_FINANCE_CONNECTION_STRING (see .env.example).", err=True)
+        raise typer.Exit(code=2)
+    result = sql_server_reconcile(settings)
+    typer.echo(result.describe())
+    for d in result.differences:
+        typer.echo(f"  {d.subject()}: {d.message()}")
+    if result.differences:
         raise typer.Exit(code=1)
 
 
