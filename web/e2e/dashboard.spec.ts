@@ -157,7 +157,7 @@ test.describe('OHIP', () => {
     await expect(provider.locator('tbody tr').nth(0)).toContainText('$300.00');
     await expect(provider.locator('tbody tr').nth(1)).toContainText('none');
     await expect(provider.locator('tbody tr').nth(1)).toContainText('$30.00');
-    await expect(page.getByText('Days to pay is not shown')).toBeVisible();
+    await expect(page.getByText('Days to pay comes from the receipts')).toBeVisible();
   });
 
   test('the legend hides a series and the table twin stays complete', async ({ page }) => {
