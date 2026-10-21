@@ -64,6 +64,7 @@ def test_a_run_extracts_builds_scores_and_swaps_the_warehouse_in(
     assert [(s.name, s.status) for s in first.steps] == [
         ("prepare", "ok"),
         ("extract", "ok"),
+        ("labflow", "skipped"),  # test_labflow_dw.py gives it LabFlow's warehouse
         ("build", "ok"),
         ("reconcile", "skipped"),  # test_reconcile.py gives it the books
         ("score", "ok"),
@@ -126,7 +127,7 @@ def test_with_nothing_extracted_ever_the_run_fails_and_says_why(tmp_path: Path) 
     settings = make_settings(tmp_path)
     report = run(settings, now=DAY)
     assert report.status == "failed"
-    assert [s.status for s in report.steps] == ["ok", "skipped", "failed", "ok"]
+    assert [s.status for s in report.steps] == ["ok", "skipped", "skipped", "failed", "ok"]
     assert not settings.warehouse_path.exists() and not next_path(settings).exists()
 
 
@@ -261,7 +262,7 @@ def test_the_run_command_exits_non_zero_when_the_run_failed(tmp_path: Path) -> N
     }
     result = CliRunner().invoke(cli.app, ["run"], env=env)
     assert result.exit_code == 1
-    assert ": failed" in result.output and "extract  skipped" in result.output
+    assert ": failed" in result.output and "extract   skipped" in result.output
 
 
 class InstantEvent:

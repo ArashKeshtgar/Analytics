@@ -80,6 +80,19 @@ export interface CancellationRow {
   cancel_refused: number;
 }
 
+/** /api/operations/lab-volumes: LabFlow's warehouse totals, by month (date-shifted), test or payer. */
+export interface LabVolumeRow {
+  month?: string;
+  test_name?: string;
+  loinc_code?: string | null;
+  payer_type?: string;
+  results: number;
+  visits: number;
+  abnormal: number;
+  critical: number;
+  turnaround_mean_days: number | null;
+}
+
 export type HstMeasure = 'sales' | 'purchases' | 'tax_collected' | 'itc';
 
 export interface HstRow {

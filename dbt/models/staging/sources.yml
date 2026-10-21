@@ -21,3 +21,7 @@ sources:
       - name: ap_item_history
       - name: clinical_event
         description: De-identified events from IntegrationHub (data/raw/events/*.parquet), one row per event id.
+      - name: dw_vw_analyticsmonthly
+        description: LabFlow warehouse totals per month, test and kind of payer (data/raw/labflow_dw/); empty when not read.
+      - name: dw_dimtest
+        description: LabFlow warehouse test catalogue (key, codes, name); empty when not read.

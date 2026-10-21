@@ -42,3 +42,11 @@ models:
         data_tests:
           - accepted_values:
               values: ['placed', 'accepted', 'resulted', 'resulted (placed before the hub)', 'cancelled', 'unknown']
+  - name: mart_lab_volume_monthly
+    columns:
+      - name: month
+        data_tests: [not_null]
+      - name: test_key
+        data_tests: [not_null]
+      - name: results
+        data_tests: [not_null]

@@ -52,7 +52,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
 | 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**; compared with FinancePowerApp's own reports on every run since phase 6 |
-| 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**, except the optional LabFlow `dw` source |
+| 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**; the optional LabFlow `dw` source added in phase 6 (monthly totals only) |
 | 5 | Forecasts and anomalies, with backtests and model cards | **Done**, not yet run on real books (one month in FinancePowerApp) |
 | 6 | Scheduling, data-quality checks, platform compose | **Done**; seen in ControlPanel's compose, extract not configured there (no `analytics_reader` login yet) |
 
@@ -280,7 +280,7 @@ Depends on IntegrationHub phase 3 (the `clinical.events` feed, schema in its `do
 
 **Not built, said plainly:**
 
-- The optional LabFlow `dw` source.
+- ~~The optional LabFlow `dw` source~~ built on 21 Oct 2026, see [LabFlow's warehouse](#labflows-warehouse-lab-volumes).
 - Nothing runs the consumer and `analytics build` on a schedule yet (phase 6). The dashboard shows what the last build
   had; consumed events wait on disk until then.
 - A rejected event is acknowledged and gone: there is no dead-letter queue, so an event refused for an unsupported
@@ -457,6 +457,31 @@ reconciliation that cannot run (the login refused, the server gone) is an error 
   reconciliation is an error and the warehouse is still replaced; skipped without books; one-sided figures).
 - Not compared: the income statement's expense side, the balance sheet, OHIP collection by provider (FinancePowerApp
   has no such report), and anything per party.
+
+#### LabFlow's warehouse (lab volumes)
+
+Phase 4's optional second source, built on 21 Oct 2026 (`labflow_dw.py`, a `labflow` step after the finance extract,
+`mart_lab_volume_monthly`, `GET /api/operations/lab-volumes?groupBy=month|test|payer`, two cards on the Operations page
+for group users).
+
+- **Only monthly totals leave LabFlow.** Its `dw` holds the legacy lab's results row by row, with free-text values and
+  the legacy visit number (a key back into the old system). LabFlow's new view `dw.vw_AnalyticsMonthly`
+  (`database/054_analytics_dw_view.sql` there, applied at its start-up) counts results, visits, answered, abnormal and
+  critical results and sums turnaround days per month, test and kind of payer; the login `analytics_dw_reader`
+  (`database/tools/analytics_dw_reader.sql`, run on the development server 21 Oct 2026) may read that view and six
+  columns of `dw.DimTest` (key, LOINC, LabFlow code, name, section, panel) and nothing else. Checked with the login:
+  legacy names, values, payer names and the patient tables are refused.
+- **Months are shifted.** LabFlow's ETL shifts every `dw` date by a secret 1–180 days either way, so the months are
+  approximate; the cards say so and are not filtered by the dashboard's months.
+- Each extract replaces the last (`data/raw/labflow_dw/`, no history). Without the setting the step is skipped and the
+  mart is empty (the cards are hidden). If the step fails, the last extract is built again and the run goes on (a
+  failed step is an error check; the warehouse is still replaced).
+- **Seen with the real LabFlow (21 Oct 2026):** 1,882 rows (monthly totals and the test catalogue's six columns) for
+  8,037 results, in ControlPanel's scheduler; the cards on the Operations page in the browser.
+- Tests: 6 Python (columns taken, the mart, the three groupings, refusal for a clinic user, empty without the source,
+  a failure that does not stop the run) and 3 web.
+- Not built: lab volumes from LabFlow's own live tables (only the legacy warehouse), small-number suppression (a
+  month/test cell can be 1), and any link between the legacy history and the platform's events.
 
 ## Not in scope
 

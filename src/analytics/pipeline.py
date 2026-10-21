@@ -26,6 +26,7 @@ import duckdb
 
 from analytics.alerts import notify
 from analytics.extract import extract_finance
+from analytics.labflow_dw import DwExtractor, sql_server_dw_extract
 from analytics.reconcile import Reconciler, sql_server_reconcile
 from analytics.retention import prune
 from analytics.scoring import score
@@ -210,6 +211,7 @@ def run(
     now: datetime | None = None,
     extractor: Extractor | None = None,
     reconciler: Reconciler | None = None,
+    dw_extractor: DwExtractor | None = None,
 ) -> Report:
     started = (now or datetime.now(UTC)).astimezone(UTC)
     report = Report(run_id=run_id_for(started), started_utc=started.isoformat())
@@ -229,6 +231,12 @@ def run(
             return "skipped: ANALYTICS_FINANCE_CONNECTION_STRING is not set"
         rows = (extractor or sql_server_extract)(work)
         return f"{len(rows)} tables, {sum(rows.values())} rows"
+
+    def extract_dw() -> str:
+        if dw_extractor is None and not settings.labflow_dw_connection_string:
+            return "skipped: ANALYTICS_LABFLOW_DW_CONNECTION_STRING is not set"
+        rows = (dw_extractor or sql_server_dw_extract)(work)
+        return f"{len(rows)} tables, {sum(rows.values())} rows (monthly totals)"
 
     def build_step() -> str:
         # The report reads dbt's results file: never last run's, when this run's dbt did not start.
@@ -257,6 +265,9 @@ def run(
         return f"{s.forecasts} of {s.series} series forecast, {s.flagged} remittance flags"
 
     ok = _step(report, "prepare", prepare) and _step(report, "extract", extract)
+    if ok:
+        # Optional source: when it fails, the last extract of it is built again and the run goes on.
+        _step(report, "labflow", extract_dw)
     built = ok and _step(report, "build", build_step)
     # The tests that failed are worth reporting even when the build as a whole failed.
     report.failed_tests = dbt_failures(work) if ok else []

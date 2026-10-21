@@ -95,7 +95,7 @@ def print_report(report: Report) -> None:
     typer.echo(f"Run {report.run_id}: {report.status}")
     for step in report.steps:
         detail = f" - {step.detail}" if step.detail else ""
-        typer.echo(f"  {step.name:<8} {step.status:<8} {step.seconds:>7.1f} s{detail}")
+        typer.echo(f"  {step.name:<9} {step.status:<8} {step.seconds:>7.1f} s{detail}")
     for check in report.checks:
         typer.echo(f"  {check.level}: {check.subject}: {check.message}")
 

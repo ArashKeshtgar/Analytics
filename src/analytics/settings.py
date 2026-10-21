@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     dbt_project_dir: Path = Path("dbt")
     # Read-only login on FinancePowerApp (phase 1). Empty until configured.
     finance_connection_string: str = ""
+    # LabFlow's warehouse through its read-only login (monthly lab volumes). Empty: not read.
+    labflow_dw_connection_string: str = ""
     # ClinicHub sign-in (phase 2).
     oidc_issuer: str = "http://localhost:5301/"
     # Empty: {issuer}.well-known/jwks

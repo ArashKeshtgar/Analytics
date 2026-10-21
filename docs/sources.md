@@ -40,10 +40,13 @@ is how Analytics reads it.
   come from LabFlow's test catalogue and ClinicReport's templates.] (3) Is the hub's `occurredAt` (when it relayed the
   call) good enough as the time of an order and of a result? [Yes; the lab's own clocks are not in the events.]
 
-## LabFlow dw (optional, phase 4)
+## LabFlow dw (optional, phase 4; read since phase 6)
 
 LabFlow's `dw` schema (`DimDate`, `DimTest`, `DimPayer`, `DimPatient` with hashed ids, `FactLabResult`), built by its
-SSIS ETL from the legacy lab system. Already de-identified.
+SSIS ETL from the legacy lab system. Already de-identified (hashed patients, dates shifted). Analytics reads only
+`dw.vw_AnalyticsMonthly` (`Year`, `Month`, `TestKey`, `PayerType`, `Results`, `Visits`, `Answered`, `Abnormal`,
+`Critical`, `TurnaroundDaysSum`, `TurnaroundCount`) and `dw.DimTest (TestKey, LoincCode, LabFlowCode, TestName,
+Section, IsPanel)`, through the login `analytics_dw_reader`; see architecture.md, phase 6.
 
 ### Columns not to extract
 

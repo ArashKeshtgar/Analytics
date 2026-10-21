@@ -11,6 +11,7 @@ import duckdb
 
 from analytics.events import EVENT_COLUMNS, events_dir
 from analytics.finance_tables import FINANCE_TABLES, HISTORY_TABLES
+from analytics.labflow_dw import load_labflow_dw
 from analytics.settings import Settings
 
 RAW_FINANCE = "finance"
@@ -150,6 +151,7 @@ def build(settings: Settings) -> int:
         ensure_meta(con)
         runs = load_raw(settings, con)
         load_events(settings, con)
+        load_labflow_dw(settings, con)
     finally:
         con.close()
     if not runs:

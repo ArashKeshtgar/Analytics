@@ -7,6 +7,7 @@ import { LineChart } from '../components/charts/LineChart';
 import { StatTile } from '../components/StatTile';
 import { duration, durationTick, monthLabel, monthShort, percent } from '../lib/format';
 import { useDashboard, useOps } from '../state/Dashboard';
+import { LabVolumes } from './LabVolumes';
 
 type Department = 'Lab' | 'Diagnostics' | undefined;
 
@@ -45,6 +46,7 @@ export function Operations() {
       <>
         {picker}
         <Empty>No orders placed in the selected months.</Empty>
+        <LabVolumes />
       </>
     );
   }
@@ -208,6 +210,7 @@ export function Operations() {
         of the cancel, the share is of the orders placed in that month, so it can pass 100% for a month with few
         orders. No patient is identifiable here: patients are pseudonyms and are not shown.
       </Notice>
+      <LabVolumes />
     </>
   );
 }

@@ -248,6 +248,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return query(sql, params)
 
+    @app.get("/api/operations/lab-volumes")
+    def lab_volumes(
+        scope: Annotated[Scope, Depends(current_scope)],
+        group_by: Annotated[str, Query(alias="groupBy")] = "month",
+    ) -> list[dict[str, Any]]:
+        """The legacy lab's history from LabFlow's warehouse: results, visits, abnormal and critical
+        results and mean turnaround (days), by `month`, `test` or `payer`. Its months are shifted by
+        up to 180 days (de-identified). The whole lab: group users only. Empty when not read."""
+        if not scope.group:
+            raise HTTPException(403, "Lab volumes are for the group permission.")
+        keys = {"month": "month", "test": "test_name, loinc_code", "payer": "payer_type"}
+        if group_by not in keys:
+            raise HTTPException(422, f"groupBy must be one of: {', '.join(keys)}")
+        columns = keys[group_by]
+        sql = (
+            f"select {columns}, sum(results)::bigint as results, sum(visits)::bigint as visits, "
+            "sum(abnormal)::bigint as abnormal, sum(critical)::bigint as critical, "
+            "round(sum(turnaround_days_sum) / nullif(sum(turnaround_count), 0), 2)::double "
+            "as turnaround_mean_days "
+            f"from main.mart_lab_volume_monthly group by {columns} order by "
+            + ("month" if group_by == "month" else "results desc, " + columns)
+        )
+        return query(sql, [])
+
     @app.get("/api/operations/cancellations")
     def cancellations(
         scope: Annotated[Scope, Depends(current_scope)],
