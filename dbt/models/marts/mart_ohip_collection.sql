@@ -1,6 +1,6 @@
 -- Per business and month: what was billed to OHIP (by item date), what was paid, and what was
 -- short-paid or refused (journal lines on the accounts mapped to the Adjustment.* categories, by
--- posting month). Days to pay is not built: receivable items do not carry a payment date.
+-- posting month). Days to pay is in mart_days_to_pay (from the receipts), not here.
 with items as (
     select
         i.business_id,

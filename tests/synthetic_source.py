@@ -7,10 +7,12 @@ A, 4 WSIB, 5 Supplier. Amounts are chosen so the expected marts can be added up 
 
 import duckdb
 
-from analytics.finance_tables import FINANCE_TABLES
+from analytics.finance_tables import FINANCE_TABLES, OPTIONAL_TABLES
 
 
-def create(unbalanced_entry: bool = False, tax_entries: bool = False) -> duckdb.DuckDBPyConnection:
+def create(
+    unbalanced_entry: bool = False, tax_entries: bool = False, payments: bool = True
+) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(":memory:")
     for schema in ("org", "tax", "gl", "ar", "ap", "dbo"):
         con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
@@ -133,11 +135,19 @@ def create(unbalanced_entry: bool = False, tax_entries: bool = False) -> duckdb.
         WHERE e."Status" IN ('Posted', 'Reversed')
         GROUP BY e.EntityId, e.PeriodId;
     """)
+    if payments:
+        # FinancePowerApp's ar.vw_ItemPayments (database/060_item_payments.sql there): when each item was paid.
+        # Item 1 (OHIP, dated 2026-09-10): 40 after 10 days, 20 after 30; item 3 (patient, dated 2026-09-20): 50 after 10.
+        con.execute("""
+            CREATE TABLE ar.vw_ItemPayments (ItemId bigint, EntityId int, PaymentDate date, Amount decimal(14,2));
+            INSERT INTO ar.vw_ItemPayments VALUES
+              (1, 1, '2026-09-20', 40), (1, 1, '2026-10-10', 20), (3, 1, '2026-09-30', 50);
+        """)
     return con
 
 
-def table_names() -> list[str]:
-    return [t.raw_name for t in FINANCE_TABLES]
+def table_names(payments: bool = True) -> list[str]:
+    return [t.raw_name for t in (*FINANCE_TABLES, *(OPTIONAL_TABLES if payments else ()))]
 
 
 def _add_tax_entries(con: duckdb.DuckDBPyConnection) -> None:

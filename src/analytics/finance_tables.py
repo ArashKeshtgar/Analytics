@@ -114,6 +114,14 @@ FINANCE_TABLES: tuple[SourceTable, ...] = (
     SourceTable("dbo", "AccountingPeriods", ("PeriodId", "Year", "Month", "IsClosed")),
 )
 
+# Read when the source has them, never required: an older FinancePowerApp (or an extract from
+# before) has no such view, and every earlier extract must stay "complete" because the open-item
+# history is built from them. `ar.vw_ItemPayments` (FinancePowerApp, database/060_*.sql):
+# which item was paid, when and how much.
+OPTIONAL_TABLES: tuple[SourceTable, ...] = (
+    SourceTable("ar", "vw_ItemPayments", ("ItemId", "EntityId", "PaymentDate", "Amount")),
+)
+
 # Columns that must never be extracted. A test checks FINANCE_TABLES against this list.
 FORBIDDEN_COLUMNS = frozenset(
     {"Email", "Phone", "Memo", "Description", "CreatedBy", "PostedBy", "Reference"}

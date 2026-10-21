@@ -1,4 +1,4 @@
-import type { OhipAnomaly, OhipProviderRow, OhipRow } from '../api/types';
+import type { DaysToPayRow, OhipAnomaly, OhipProviderRow, OhipRow } from '../api/types';
 import { Card, Empty, Notice } from '../components/Card';
 import { ColumnChart } from '../components/charts/ColumnChart';
 import { LineChart } from '../components/charts/LineChart';
@@ -14,6 +14,7 @@ export function Ohip() {
   const collection = useFinance<OhipRow[]>('/api/finance/ohip-collection');
   const providers = useFinance<OhipProviderRow[]>('/api/finance/ohip-providers');
   const anomalies = useFinance<OhipAnomaly[]>('/api/finance/ohip-anomalies');
+  const waits = useFinance<DaysToPayRow[]>('/api/finance/days-to-pay', { params: { payer: 'OHIP' } });
   const error = collection.error ?? providers.error ?? anomalies.error;
   if (error) return <p className="error">{error}</p>;
   if (!collection.data || !providers.data || !anomalies.data) return <p className="empty">Loading…</p>;
@@ -159,8 +160,35 @@ export function Ohip() {
           more billed); it needs six earlier months and a run of <code>analytics score</code>.
         </Notice>
       )}
+      {waits.data && waits.data.length > 0 && (
+        <Card
+          title="Days to pay"
+          subtitle="From the claim date to each OHIP payment, by the month paid; the mean is weighted by the amount"
+          stale={waits.loading}
+          table={{
+            csvName: `days-to-pay-${range.to.slice(0, 7)}`,
+            columns: [
+              { key: 'month', label: 'Month paid' },
+              { key: 'business', label: 'Business' },
+              { key: 'payments', label: 'Payments', numeric: true },
+              { key: 'amount', label: 'Amount', numeric: true, format: money2 },
+              { key: 'mean_days', label: 'Mean days', numeric: true, format: (v) => v.toFixed(1) },
+              { key: 'max_days', label: 'Longest', numeric: true },
+            ],
+            rows: waits.data.map((w) => ({
+              month: monthLabel(w.month),
+              business: w.business,
+              payments: w.payments,
+              amount: w.amount,
+              mean_days: w.mean_days,
+              max_days: w.max_days,
+            })),
+          }}
+        />
+      )}
       <Notice>
-        Days to pay is not shown: receivable items carry no payment date. “Paid” is by business, not by provider. The
+        “Paid” is by business, not by provider. Days to pay comes from the receipts FinancePowerApp posted, so it is empty
+        until a remittance has been posted against a claim. The
         monthly figures are by the date of the receivable item, the provider table by the month the journal was posted,
         so their totals can differ.
       </Notice>

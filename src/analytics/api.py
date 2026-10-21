@@ -349,6 +349,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return query(sql, params)
 
+    @app.get("/api/finance/days-to-pay")
+    def days_to_pay(
+        scope: Annotated[Scope, Depends(current_scope)],
+        business: str | None = None,
+        payer: str | None = None,
+        from_: Annotated[date | None, Query(alias="from")] = None,
+        to: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Days from the item date to each payment, per business, payer type and payment month:
+        payments, amount, the amount-weighted mean and the longest wait. From FinancePowerApp's
+        receipts; empty when the source does not carry them."""
+        where, params = _filters("r", scope, business, from_, to)
+        if payer:
+            where = (where + " and " if where else "where ") + "r.party_type = ?"
+            params.append(payer)
+        sql = (
+            "select b.code as business, r.party_type as payer, r.month, r.payments, "
+            "r.amount::double as amount, r.mean_days::double as mean_days, r.max_days "
+            "from main.mart_days_to_pay r join main.dim_business b using (business_id) "
+            f"{where} order by b.code, r.party_type, r.month"
+        )
+        return query(sql, params)
+
     @app.get("/api/finance/ohip-providers")
     def ohip_providers(
         scope: Annotated[Scope, Depends(current_scope)],

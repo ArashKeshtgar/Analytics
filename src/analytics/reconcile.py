@@ -8,7 +8,10 @@ compares them with the marts, figure by figure:
 - HST collected and input tax credits per business and posting month: `tax.vw_HstReturn` lines 103
   and 106 against `mart_hst_period`;
 - what is owed to and by each business: `ar.Item` / `ap.Item` balances against the latest
-  snapshot in `fact_open_item_snapshot`.
+  snapshot in `fact_open_item_snapshot`;
+- the trial balance: per business and account, debits minus credits of every posted entry
+  (`gl.vw_PeriodMovement`, the view FinancePowerApp's own trial-balance report is built from)
+  against `fact_gl_line`. One figure per account, named `trial_balance {account number}`.
 
 The two views are the only ones the read-only login may read (they carry no text). A figure on one
 side only counts as zero on the other. A difference is a warning, not a failed run: the books can
@@ -58,6 +61,12 @@ BOOKS: dict[str, str] = {
         SELECT EntityId AS business_id, NULL AS yr, NULL AS mo, SUM(Balance) AS amount
         FROM ap.Item GROUP BY EntityId
     """,
+    "trial_balance": """
+        SELECT pm.EntityId AS business_id, NULL AS yr, NULL AS mo, SUM(pm.Net) AS amount,
+               a.Number AS account
+        FROM gl.vw_PeriodMovement pm JOIN gl.Account a ON a.AccountId = pm.AccountId
+        GROUP BY pm.EntityId, a.Number
+    """,
 }
 
 WAREHOUSE: dict[str, str] = {
@@ -84,6 +93,11 @@ WAREHOUSE: dict[str, str] = {
         where side = 'payable'
           and snapshot_date = (select max(snapshot_date) from main.fact_open_item_snapshot)
         group by 1
+    """,
+    "trial_balance": """
+        select f.business_id, null, null, sum(f.debit - f.credit), a.number
+        from main.fact_gl_line f join main.dim_account a using (account_id)
+        group by 1, 5
     """,
 }
 
@@ -127,11 +141,16 @@ def _key(measure: str, business: object, yr: object, mo: object) -> Key:
     return (measure, int(str(business)), month)
 
 
+def _name(measure: str, account: list[object]) -> str:
+    """A figure per account is named after it: `trial_balance 4000`."""
+    return f"{measure} {account[0]}" if account else measure
+
+
 def books_figures(source: Source) -> dict[Key, Decimal]:
     figures: dict[Key, Decimal] = {}
     for measure, sql in BOOKS.items():
-        for business, yr, mo, amount in source.read(sql).iter_rows():
-            figures[_key(measure, business, yr, mo)] = _amount(amount)
+        for business, yr, mo, amount, *account in source.read(sql).iter_rows():
+            figures[_key(_name(measure, account), business, yr, mo)] = _amount(amount)
     return figures
 
 
@@ -140,8 +159,8 @@ def warehouse_figures(path: Path) -> dict[Key, Decimal]:
     try:
         figures: dict[Key, Decimal] = {}
         for measure, sql in WAREHOUSE.items():
-            for business, yr, mo, amount in con.execute(sql).fetchall():
-                figures[_key(measure, business, yr, mo)] = _amount(amount)
+            for business, yr, mo, amount, *account in con.execute(sql).fetchall():
+                figures[_key(_name(measure, account), business, yr, mo)] = _amount(amount)
         return figures
     finally:
         con.close()

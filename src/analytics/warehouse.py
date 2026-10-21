@@ -10,7 +10,7 @@ from typing import Any
 import duckdb
 
 from analytics.events import EVENT_COLUMNS, events_dir
-from analytics.finance_tables import FINANCE_TABLES, HISTORY_TABLES
+from analytics.finance_tables import FINANCE_TABLES, HISTORY_TABLES, OPTIONAL_TABLES
 from analytics.labflow_dw import load_labflow_dw
 from analytics.settings import Settings
 
@@ -76,6 +76,19 @@ def load_raw(settings: Settings, con: duckdb.DuckDBPyConnection) -> list[str]:
             f"CREATE OR REPLACE TABLE raw.{table.raw_name} AS "
             f"SELECT * FROM read_parquet('{_parquet(settings, latest, table.raw_name)}')"
         )
+    for table in OPTIONAL_TABLES:
+        path = settings.data_dir / "raw" / RAW_FINANCE / latest / f"{table.raw_name}.parquet"
+        if path.is_file():
+            con.execute(
+                f"CREATE OR REPLACE TABLE raw.{table.raw_name} AS "
+                f"SELECT * FROM read_parquet('{_parquet(settings, latest, table.raw_name)}')"
+            )
+        else:  # empty, so the models still build; typed, so they read it the same way
+            con.execute(
+                f"CREATE OR REPLACE TABLE raw.{table.raw_name} AS SELECT NULL::bigint AS ItemId, "
+                "NULL::integer AS EntityId, NULL::date AS PaymentDate, "
+                "NULL::decimal(14, 2) AS Amount WHERE false"
+            )
     last_of_day: dict[date, str] = {}
     for run in runs:
         last_of_day[run_date(run)] = run

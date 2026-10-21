@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from analytics.finance_tables import FINANCE_TABLES
+from analytics.finance_tables import FINANCE_TABLES, OPTIONAL_TABLES
 from analytics.settings import Settings
 from analytics.sources import Source
 from analytics.warehouse import RAW_FINANCE, connect, ensure_meta, run_id_for
@@ -28,6 +28,15 @@ def extract_finance(
     try:
         for table in FINANCE_TABLES:
             df = source.read(table.query)
+            df.write_parquet(out_dir / f"{table.raw_name}.parquet")
+            rows[table.raw_name] = df.height
+        for table in OPTIONAL_TABLES:
+            try:
+                df = source.read(table.query)
+            except (
+                Exception
+            ):  # the source has no such view (an older FinancePowerApp): nothing is lost
+                continue
             df.write_parquet(out_dir / f"{table.raw_name}.parquet")
             rows[table.raw_name] = df.height
     except Exception as exc:

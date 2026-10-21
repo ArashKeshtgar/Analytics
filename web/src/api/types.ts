@@ -27,6 +27,18 @@ export interface RevenueRow {
   revenue: number;
 }
 
+/** /api/finance/days-to-pay: days from the item date to each payment, by payer type and payment month. */
+export interface DaysToPayRow {
+  business: string;
+  payer: string;
+  month: string;
+  payments: number;
+  amount: number;
+  /** Weighted by the amount paid. */
+  mean_days: number | null;
+  max_days: number;
+}
+
 export interface OhipRow {
   business: string;
   month: string;

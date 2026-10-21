@@ -70,6 +70,9 @@ def test_books_that_moved_after_the_extract_are_reported_not_fatal(tmp_path: Pat
         # 200 OHIP less 30 refused and 10 short-paid, then the 25 posted after the extract
         ("revenue business 1 2026-10", "FinancePowerApp 185.00, Analytics 160.00"),
         ("receivable business 1", "FinancePowerApp 285.00, Analytics 260.00"),
+        # the same 25 on the trial balance: a debit on receivables, a credit on OHIP revenue
+        ("trial_balance 1100 business 1", "FinancePowerApp 335.00, Analytics 310.00"),
+        ("trial_balance 4000 business 1", "FinancePowerApp -325.00, Analytics -300.00"),
     }
     assert all(c.level == "warning" for c in report.checks if c.kind == "reconcile")
 

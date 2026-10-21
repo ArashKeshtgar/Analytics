@@ -17,6 +17,8 @@ sources:
       - name: ar_item
       - name: ap_item
       - name: dbo_accountingperiods
+      - name: ar_vw_itempayments
+        description: When each receivable item was paid (FinancePowerApp's ar.vw_ItemPayments); empty when the source has no such view.
       - name: ar_item_history
       - name: ap_item_history
       - name: clinical_event

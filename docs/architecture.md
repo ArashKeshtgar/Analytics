@@ -117,9 +117,9 @@ exits with code 2 and says it is not built (phase 1). Not yet seen running: the 
 
 - Incremental extract: every run is a full copy (FinancePowerApp's entries change status and items change balance, so
   "newer than" would miss updates). Fine at this size; revisit if a table grows.
-- Days to pay in `mart_ohip_collection` (no payment date in the source, question 6 in sources.md).
-- The cross-check of the trial balance against `/api/reports/trial-balance` (question 7). What exists is the
-  internal check that every entry and every business balances.
+- ~~Days to pay~~ built 21 Oct 2026: `mart_days_to_pay` and `GET /api/finance/days-to-pay` (see Phase 6, "Days to pay").
+- ~~The cross-check of the trial balance~~ done in a different way: the reconciliation compares every account's net
+  with `gl.vw_PeriodMovement` (question 7 in sources.md).
 - Ageing history only starts at the first extract; days without a run have no snapshot.
 - ~~No sign-in~~: done in phase 2 (ClinicHub tokens, clinic-scoped access).
 - ~~Not run against a real SQL Server~~: run against the development FinancePowerApp since 20 Oct 2026 through
@@ -214,7 +214,7 @@ permissions **without** the prefix (`dashboard.view`); Analytics reads both form
   The HST page is still read from the journal and is **not** the GST34 return (no line numbers, the filing period is
   not known), but its tax collected and ITCs per business and month now agree with FinancePowerApp's
   `tax.vw_HstReturn` lines 103 and 106 on every run.
-- Days to pay (no payment date in the source) and "paid" by provider.
+- "Paid" by provider (payments are not recorded per provider).
 - Texture fills for print and forced colors; an automated accessibility audit; screen-reader testing.
 - Silent token renewal, ending the ClinicHub session on sign-out, a production build served by anything but
   `vite preview` (the platform compose is phase 6), a Docker image of the web.
@@ -458,6 +458,23 @@ reconciliation that cannot run (the login refused, the server gone) is an error 
   reconciliation is an error and the warehouse is still replaced; skipped without books; one-sided figures).
 - Not compared: the income statement's expense side, the balance sheet, OHIP collection by provider (FinancePowerApp
   has no such report), and anything per party.
+
+#### Days to pay
+
+Built 21 Oct 2026 from the receipts FinancePowerApp posted (sources.md, question 6): its `ar.vw_ItemPayments`
+(`database/060_item_payments.sql`, item, date and amount only) is an **optional** source table (`OPTIONAL_TABLES`): read
+when the source has it, skipped when it does not (an older FinancePowerApp), never part of "a complete extract", so every
+earlier extract stays complete and the open-item history is not touched. `mart_days_to_pay` is, per business, payer type
+and payment month, the number of payments, the amount, the mean days from the item date weighted by the amount, and the
+longest wait (a payment dated before its item counts as 0 days). `GET /api/finance/days-to-pay?payer=&from=&to=`, and a
+"Days to pay" card on the OHIP page. **Seen with the real books:** the two receipts there (both patients, paid the day
+they were billed) give 0 days; there is **no OHIP remittance in the books yet**, so the OHIP card stays empty until one
+is posted against a claim. Tests: 4 (the weighting, the API, a source without the view, an extract from before it).
+
+#### Trial balance
+
+The reconciliation also compares, per business and account, debits minus credits of every posted entry with
+`gl.vw_PeriodMovement`: `trial_balance {account number}`. Against the real books: 44 figures compared, 0 differ.
 
 #### LabFlow's warehouse (lab volumes)
 

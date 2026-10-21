@@ -215,10 +215,14 @@ CREATE TABLE dbo.AccountingPeriods (
 4. Are those adjustments posted to the accounts that `gl.CategoryMap` maps for those categories, and are those
    revenue-type accounts (contra-revenue)? [Yes: they then reduce `mart_revenue_monthly`, which is the stated meaning.]
 5. Is `Department` always set on revenue lines? [Used as the line of business; `Unassigned` when empty.]
-6. Is there a payment date anywhere (`ar.Item` has only `Paid`, no date)? Without it **days to pay is not built**.
-   A payments table, or the journal entry that cleared the item, would give it.
-7. What does `/api/reports/trial-balance` return (fields, rounding)? The cross-check test against a recorded
-   answer is **not built** until a sample answer is pasted here.
+6. **Answered (21 Oct 2026): yes, in the receipts.** `ar.Item` has no payment date, but each posted Receipt document
+   (`integ.Document`) names, line by line, the reference it settles (`appliesTo`, else its own reference) and has a date.
+   FinancePowerApp's `database/060_item_payments.sql` makes `ar.vw_ItemPayments` (item, date, amount; no text) from them,
+   and the read-only login may read that view and nothing else of the inbox. Days to pay is `mart_days_to_pay`.
+7. **Answered in a different way (21 Oct 2026):** instead of calling `/api/reports/trial-balance` (it needs a token and
+   its answer is not recorded), every run compares each business's and account's debits minus credits with
+   FinancePowerApp's `gl.vw_PeriodMovement`, the view its trial balance is built from (`trial_balance {account}`
+   figures in the reconciliation). The API's own rounding and its date handling are not compared.
 
 ## ClinicHub tokens (phase 2)
 

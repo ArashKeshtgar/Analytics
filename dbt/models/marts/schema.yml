@@ -50,3 +50,10 @@ models:
         data_tests: [not_null]
       - name: results
         data_tests: [not_null]
+  - name: mart_days_to_pay
+    columns:
+      - name: business_id
+        data_tests:
+          - relationships: {to: ref('dim_business'), field: business_id}
+      - name: payments
+        data_tests: [not_null]
