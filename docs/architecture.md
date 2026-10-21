@@ -54,7 +54,7 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 | 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**; compared with FinancePowerApp's own reports on every run since phase 6 |
 | 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**; the optional LabFlow `dw` source added in phase 6 (monthly totals only) |
 | 5 | Forecasts and anomalies, with backtests and model cards | **Done**, not yet run on real books (one month in FinancePowerApp) |
-| 6 | Scheduling, data-quality checks, platform compose | **Done**; seen in ControlPanel's compose, extract not configured there (no `analytics_reader` login yet) |
+| 6 | Scheduling, data-quality checks, platform compose | **Done**; runs in ControlPanel's compose against the real FinancePowerApp (`analytics_reader`) and LabFlow warehouse, with alerts, pruning, the Runs page and a reconciliation on every run |
 
 Each phase ends with tests green in CI, this table and the README's status list updated. Changes needed in other
 repositories are listed per phase; they are made there, in their own commits, and noted here.
@@ -121,9 +121,10 @@ exits with code 2 and says it is not built (phase 1). Not yet seen running: the 
 - The cross-check of the trial balance against `/api/reports/trial-balance` (question 7). What exists is the
   internal check that every entry and every business balances.
 - Ageing history only starts at the first extract; days without a run have no snapshot.
-- No sign-in: the API is open and meant for localhost until phase 2.
-- Not run against a real SQL Server: `SqlServerSource` and `docs/finance-reader.sql` are untested; tests use a
-  DuckDB database with FinancePowerApp's table names and columns as the synthetic source.
+- ~~No sign-in~~: done in phase 2 (ClinicHub tokens, clinic-scoped access).
+- ~~Not run against a real SQL Server~~: run against the development FinancePowerApp since 20 Oct 2026 through
+  `analytics_reader` (now FinancePowerApp's `database/tools/analytics_reader.sql`); the tests still use the synthetic
+  DuckDB source.
 - Several mart rules rest on assumptions about FinancePowerApp (sources.md, questions 1–5).
 
 ### Phase 2 — Sign-in through ClinicHub
