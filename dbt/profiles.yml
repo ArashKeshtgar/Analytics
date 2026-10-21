@@ -1,0 +1,7 @@
+analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('ANALYTICS_WAREHOUSE_PATH', '../data/warehouse.duckdb') }}"
+      threads: 4

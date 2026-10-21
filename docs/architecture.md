@@ -48,13 +48,13 @@ pytest, ruff, mypy, GitHub Actions. Web: React + Vite + TypeScript, like the oth
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Skeleton: package, CLI, health, CI, Docker | Not started |
-| 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | Not started |
-| 2 | Sign-in through ClinicHub, clinic-scoped access | Not started |
-| 3 | Dashboard web: revenue, OHIP collection, receivables, HST | Not started |
-| 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | Not started |
-| 5 | Forecasts and anomalies, with backtests and model cards | Not started |
-| 6 | Scheduling, data-quality checks, platform compose | Not started |
+| 0 | Skeleton: package, CLI, health, CI, Docker | **Done** |
+| 1 | Finance warehouse: extract FinancePowerApp, dbt marts, API | **Done** (with the gaps listed under the phase) |
+| 2 | Sign-in through ClinicHub, clinic-scoped access | **Done** in the API; the web sign-in comes with the web in phase 3 |
+| 3 | Dashboard web: revenue, OHIP collection, receivables, HST | **Done**; compared with FinancePowerApp's own reports on every run since phase 6 |
+| 4 | Operations: de-identified events from IntegrationHub, turnaround, the clinic operations dashboard | **Done**; the optional LabFlow `dw` source added in phase 6 (monthly totals only) |
+| 5 | Forecasts and anomalies, with backtests and model cards | **Done**, not yet run on real books (one month in FinancePowerApp) |
+| 6 | Scheduling, data-quality checks, platform compose | **Done**; runs in ControlPanel's compose against the real FinancePowerApp (`analytics_reader`) and LabFlow warehouse, with alerts, pruning, the Runs page and a reconciliation on every run |
 
 Each phase ends with tests green in CI, this table and the README's status list updated. Changes needed in other
 repositories are listed per phase; they are made there, in their own commits, and noted here.
@@ -68,6 +68,10 @@ repositories are listed per phase; they are made there, in their own commits, an
 - `.env.example` with every setting; settings read with pydantic-settings.
 
 **Done when:** `uv run pytest`, `uv run ruff check`, `uv run mypy src` pass in CI and `analytics serve` answers on `:5600`.
+
+**Built:** all of the above. `analytics build` runs dbt on the (empty) project; `analytics extract finance` exists but
+exits with code 2 and says it is not built (phase 1). Not yet seen running: the first CI run on GitHub, and
+`docker build` (see README).
 
 ### Phase 1 — Finance warehouse
 
@@ -92,6 +96,37 @@ repositories are listed per phase; they are made there, in their own commits, an
 - **Other repositories:** FinancePowerApp — a script `database/050_analytics_reader.sql` creating the read-only login
   and grants (made there).
 
+**Built:**
+
+- `analytics extract finance` (pyodbc, read-only connection) writes `data/raw/finance/{run}/{table}.parquet` and
+  logs the run in `meta.load_run` / `meta.load_run_table` (a failed run is logged with the error type and first
+  line only). Columns are listed one by one in `finance_tables.py`; free text, staff names, contact details and
+  document references are not extracted (a test enforces this).
+- `analytics build` loads the Parquet runs into schema `raw` (current tables from the latest run; an open-item
+  history with one snapshot per day, rebuilt from the runs kept on disk) and runs `dbt build`. It exits 1 when there
+  is no extract yet.
+- dbt: `stg_*`, `dim_business`, `dim_account`, `dim_period`, `dim_party`, `fact_gl_line`, `fact_open_item_snapshot`,
+  `mart_revenue_monthly`, `mart_ohip_collection`; tests: unique/not-null/relationships, every entry balances, every
+  business balances.
+- API: `GET /api/finance/revenue` (`business`, `from`, `to`, `groupBy` = comma list of
+  `month|business|lineOfBusiness|provider`), `/api/finance/ohip-collection`, `/api/finance/aging` (`business`,
+  `asOf`, `side`). Amounts are returned as numbers rounded to cents.
+- `docs/finance-reader.sql`: the read-only login (to be copied to FinancePowerApp as `database/050_analytics_reader.sql`).
+
+**Not built, said plainly:**
+
+- Incremental extract: every run is a full copy (FinancePowerApp's entries change status and items change balance, so
+  "newer than" would miss updates). Fine at this size; revisit if a table grows.
+- ~~Days to pay~~ built 21 Oct 2026: `mart_days_to_pay` and `GET /api/finance/days-to-pay` (see Phase 6, "Days to pay").
+- ~~The cross-check of the trial balance~~ done in a different way: the reconciliation compares every account's net
+  with `gl.vw_PeriodMovement` (question 7 in sources.md).
+- Ageing history only starts at the first extract; days without a run have no snapshot.
+- ~~No sign-in~~: done in phase 2 (ClinicHub tokens, clinic-scoped access).
+- ~~Not run against a real SQL Server~~: run against the development FinancePowerApp since 20 Oct 2026 through
+  `analytics_reader` (now FinancePowerApp's `database/tools/analytics_reader.sql`); the tests still use the synthetic
+  DuckDB source.
+- Several mart rules rest on assumptions about FinancePowerApp (sources.md, questions 1–5).
+
 ### Phase 2 — Sign-in through ClinicHub
 
 - Web signs in with OIDC (authorization code + PKCE) against `http://localhost:5301/`; the API validates ClinicHub
@@ -102,6 +137,37 @@ repositories are listed per phase; they are made there, in their own commits, an
   `http://localhost:5601/signin-oidc`), add the three permissions to the permission list and to the built-in roles
   (Administrator: all; Physician: dashboard.view). See how `labflow:*` was added there.
 
+**Built (this repository):**
+
+- The API checks ClinicHub access tokens (`auth.py`): RS256 signature against `{issuer}.well-known/jwks`
+  (`ANALYTICS_OIDC_JWKS_URI` overrides), issuer, expiry (60 s leeway), `sub`; the audience only when
+  `ANALYTICS_OIDC_AUDIENCE` is set. `alg: none`, HS256 and unknown `kid` are refused. No token or a bad one is `401`
+  with `WWW-Authenticate: Bearer`; ClinicHub's keys unreachable is `503`; a valid token without a finance permission is
+  `403`. The token is never logged or echoed.
+- `permission` (a list or one space-separated string), `clinic_slug` and `name` are read from the token.
+  `analytics:group.view` sees every business. `analytics:dashboard.view` sees only the business whose
+  `dim_business.clinic_slug` equals the token's `clinic_slug` (case-insensitive); with no `clinic_slug` it is `403`.
+  The clinic from the token always applies; a `business` in the request narrows it further, so asking for another
+  clinic gives an empty list, not an error and not that clinic's numbers. This holds for revenue, OHIP collection and
+  ageing.
+- `GET /api/me`: name, clinic, permissions and `scope` (`group`, `clinic` or `none`) for any valid token; the dashboard
+  uses it to decide what to show. `/healthz` and `/api/version` stay open.
+- CORS: only `ANALYTICS_WEB_ORIGIN` (default `http://localhost:5601`), `GET`, `Authorization`.
+- There is no switch to turn authentication off. To call the API by hand you need a ClinicHub token.
+- Tests (52 in all, 24 for this phase) sign tokens with a key generated per run and serve the JWKS from a local HTTP
+  server, so the real key fetching is exercised. Checked by breaking the clinic filter: three tests fail.
+
+**Not built, said plainly:**
+
+- The web's sign-in (authorization code + PKCE, `/signin-oidc`): there is no web yet. It is the first item of phase 3.
+- `analytics:models.view` is recognised (and shown by `/api/me`) but guards nothing: the model pages are phase 5.
+- No revocation or session handling: a token is good until it expires; the keys are cached by PyJWT (5 minutes).
+- Run against a real ClinicHub token on 2026-10-18 (answers in sources.md).
+
+**Other repositories — done** (ClinicHub `c71b3bd`): the client `analytics`, the three permissions (Administrator: all;
+Physician: `dashboard.view`), and its access tokens carry `permission`, `clinic_slug` and `name`. ClinicHub sends the
+permissions **without** the prefix (`dashboard.view`); Analytics reads both forms since `6ba4c5a`.
+
 ### Phase 3 — Dashboard
 
 - React + Vite + TypeScript in `web/`, charts with one consistent palette, light and dark.
@@ -110,6 +176,55 @@ repositories are listed per phase; they are made there, in their own commits, an
   period, matching FinancePowerApp's report), **Group** (businesses side by side, `group.view` only).
 - CSV download on every table. Numbers on the dashboard match FinancePowerApp's own reports for the same period —
   a test checks one of each.
+
+**Built:**
+
+- `web/`: React 19 + Vite + TypeScript. Sign-in is the authorization code flow with PKCE against ClinicHub (client
+  `analytics`, redirect `/signin-oidc`, library `oidc-client-ts`); the token is kept in the tab's session storage; an
+  expired token or a `401` sends the user through sign-in again and back to the same page. Permissions come from
+  `/api/me`, not from reading the token. Sign-out clears the tab's session only (it does not end the ClinicHub session).
+- One filter row above everything: Last 12 / 6 / 3 months, Year to date, Last year (counted back from the **latest month
+  with data**, not from today) and, for group users, the business. A reload keeps the previous render, dimmed.
+- **Overview**: the one hero figure (revenue of the latest month and the change against the same month a year earlier),
+  revenue by line of business (this month against a year earlier) and a monthly line with the year-earlier line.
+  **OHIP**: billed, paid, outstanding, refused and short-paid rate; billed and paid by month; the two rates by month; a
+  by-provider table. **Receivables** (and payables): ageing buckets per payer type as a stacked bar, on the last
+  snapshot up to the end of the range. **HST**: sales by tax code, HST collected, ITCs and net tax by month or quarter.
+  **Group** (`analytics:group.view` only): businesses side by side.
+- Every chart has a table twin (the Chart / Table switch) and every table downloads as CSV (raw numbers, quoted
+  per RFC 4180, a text cell that starts with `=`, `+`, `-` or `@` is neutralised, UTF-8 with a byte order mark).
+- Charts: hand-written SVG; marks at most 24 px, rounded at the data end, a 2 px gap between neighbours; one tooltip
+  with every series, also on keyboard focus and arrow keys; legend for two or more series that hides a series (never
+  the last); hover lifts the mark; colours follow the entity (categorical slots 1 and 2, a gray for "a year
+  earlier", a five-step one-hue ramp for the ageing buckets). The palette was run through the validator
+  (light and dark): slots 1–3 pass all-pairs; slot 3 (aqua) is below 3:1 on the light surface, so it is not used; the
+  ageing ramps pass as ordinal. Dark mode follows the system and can be set with the toggle (remembered in this browser).
+- API additions the pages needed: `GET /api/finance/businesses`, `/range`, `/ohip-providers`, `/hst`, and dbt models
+  `mart_hst_period` and `mart_ohip_provider_monthly`, all clinic-scoped like the rest. Staging now casts nullable text
+  columns: an all-NULL column (no tax code posted yet) is typed "null" in Parquet and broke the models.
+- Tests: 76 in Vitest (formats, CSV, periods, the data shaping, chart paths and tooltips, the API client, the
+  reload hook, the filter-to-request mapping), 24 in a real browser (Playwright: sign-in with PKCE against a fake
+  ClinicHub that refuses a wrong verifier, expiry, each page's numbers worked out by hand, filters, CSV download,
+  dark mode, no horizontal scroll at 390 px, no console errors), and 17 more Python tests (the new endpoints and
+  marts, an all-NULL source column, the fake sign-in).
+
+**Not built, said plainly:**
+
+- ~~"Numbers match FinancePowerApp's own reports"~~ **done in phase 6 (21 Oct 2026), see [Reconciliation](#reconciliation-with-financepowerapps-own-reports).**
+  The HST page is still read from the journal and is **not** the GST34 return (no line numbers, the filing period is
+  not known), but its tax collected and ITCs per business and month now agree with FinancePowerApp's
+  `tax.vw_HstReturn` lines 103 and 106 on every run.
+- "Paid" by provider (payments are not recorded per provider).
+- Texture fills for print and forced colors; an automated accessibility audit; screen-reader testing.
+- Silent token renewal, ending the ClinicHub session on sign-out, a production build served by anything but
+  `vite preview` (the platform compose is phase 6), a Docker image of the web.
+- Not seen working with the real ClinicHub.
+
+**Other repositories — done** (ClinicHub `c71b3bd`, seen working on 2026-10-18): `analytics` is a public client (code
+flow with PKCE, redirect `http://localhost:5601/signin-oidc`); ClinicHub allows CORS from the origins a client lists
+(`CorsOrigins`) on discovery, keys, token and userinfo only; `openid profile` is enough, the access token carries
+`permission`, `clinic_slug` and `name`. A physician signed in, saw Harbourview only and no Group page; the
+administrator saw every business. Note: this machine's Node 20.12 is too old for Vite 8 (needs 20.19+).
 
 ### Phase 4 — Operations
 
@@ -121,6 +236,94 @@ Depends on IntegrationHub phase 3 (the `clinical.events` feed, schema in its `do
 - Dashboard page **Operations**: this is ClinicHub's open README item "Clinic operations dashboard".
 - Optional: LabFlow `dw` (already de-identified star schema) as a second source for lab volumes.
 
+**Built:**
+
+- `analytics consume` (`events.py`, pika): declares the topic exchange `clinical.events`, the durable queue
+  `analytics.clinical-events` and the `#` binding exactly as IntegrationHub does (durable, no arguments, idempotent),
+  reads with a prefetch of one batch, writes each batch as a Parquet file under `data/raw/events/` (to a temporary file,
+  `fsync`, rename) and **only then acknowledges it**. If the write fails nothing is acknowledged and the broker gives the
+  messages out again (tested with a broken writer). `--drain` reads what is waiting and stops (for a schedule, phase 6);
+  without it the command keeps running and reconnects with a growing pause. A connection error never prints the URL or
+  the password.
+- **A strict allow-list in front of everything that is kept.** Every field must look like what IntegrationHub's contract
+  says it is: a pseudonym is 64 hex characters, an order id is `service-request|` and a plain token, a priority is one of
+  routine, urgent, asap, stat, a test code has no spaces. An event that does not fit is rejected whole; the rejection is
+  written as a **reason code** (with the event id and type when those are well formed) and never as the value. Fields the
+  contract does not name are dropped before anything is written (tested with a name, a health card and a note planted in
+  events, searching every byte on disk). `schemaVersion` other than 1 is rejected as `unsupported-schema-version`.
+  `finance.document` is ignored: money comes from FinancePowerApp's database, and counting it twice would be wrong.
+- `analytics build` loads the Parquet files into `raw.clinical_event`, **one row per event id** (the first received wins:
+  delivery is at least once, and a repeated event is in the files twice), and runs dbt. With no events at all the table
+  is empty and the models still build.
+- dbt: `stg_clinical_event`; `fact_order` (one row per order, built from its events in whatever order they arrived:
+  placed, accepted, first and last final result, amendments, cancel, refused cancels, status, department
+  Lab = LabFlow and Diagnostics = ClinicReport, turnaround in minutes from placed to the first final result);
+  `mart_turnaround` (clinic, month placed, department, test, priority: orders placed and resulted, median and 90th
+  percentile); `mart_cancellations`. Tests: one row per event and per order, no result before its order, and the usual
+  not-null and accepted-values.
+- API (clinic-scoped like the rest; a clinic user's own clinic always applies): `GET /api/operations/turnaround`
+  (`clinic`, `department`, `from`, `to`, `groupBy` = comma list of `month|clinic|department|test|priority`, or `none`),
+  `/api/operations/cancellations`, `/api/operations/range`. Percentiles come from `fact_order` so any grouping is exact
+  (a median of medians would not be).
+- **Operations page** in the dashboard (ClinicHub's open README item "Clinic operations dashboard"): orders placed, with a
+  final result, waiting, median and 90th percentile, cancelled; turnaround by test and by month; by priority; lab and
+  diagnostics; cancellations and refused cancels; a department switch; a table twin and CSV for each. Durations are
+  written in whole units ("2 h 45 min", "1 d 5 h") and the axis ticks fall on hours and days. The filter row now counts
+  back from the later of the last finance month and the last month with events ("Data up to").
+- Tests: 47 for the consumer (parsing every rejection, and against a real RabbitMQ in Testcontainers: drain, batching,
+  duplicates, rejections, no trace of planted values on disk, nothing acknowledged when the write fails, reading until
+  told to stop, an unreachable broker), 27 for the models and API (turnaround, percentiles, grouping, scoping, out-of-order
+  events, a result before its order fails the build), 84 in Vitest and 32 in the browser (8 new for this page).
+- Also found and fixed: `get_settings()` is cached for the whole process, so a test that set the environment could see an
+  earlier test's values (or leave its own behind); every test now starts with a clean cache. And the page's "totals"
+  request (`groupBy=`) was dropped by the client, which skips empty values, so it would have been grouped by month; the
+  API takes `groupBy=none` now.
+
+**Not built, said plainly:**
+
+- ~~The optional LabFlow `dw` source~~ built on 21 Oct 2026, see [LabFlow's warehouse](#labflows-warehouse-lab-volumes).
+- Nothing runs the consumer and `analytics build` on a schedule yet (phase 6). The dashboard shows what the last build
+  had; consumed events wait on disk until then.
+- A rejected event is acknowledged and gone: there is no dead-letter queue, so an event refused for an unsupported
+  `schemaVersion` cannot be replayed after Analytics learns version 2. The hub keeps published outbox rows for 7 days
+  but has no replay yet.
+- Test names: events carry codes only (LOINC, ClinicReport template keys), so the page shows codes.
+- Seen once with the real applications (2026-10-18, on a developer machine): ClinicHub placed 6 lab tests at
+  Harbourview through IntegrationHub (events on, its own RabbitMQ account) to LabFlow, and cancelled one;
+  `analytics consume --drain` (with the `analytics` account) stored 13 events, `analytics build` passed, and the
+  Operations page showed 6 placed, 5 waiting, 1 cancelled, 5 routine and 1 stat. That run found that the hub did not
+  recognise ClinicHub's real cancel (a Bundle POSTed to `/fhir`, not a `PUT`), fixed in IntegrationHub. LabFlow then
+  got `ClinicHub:ResultsUrl` (its results had gone straight to ClinicHub); with it pointed at the hub, two released
+  results made `result.final` events and the page showed 2 resulted, median and 90th percentile 42 min, by test,
+  priority and department. Not seen: ClinicReport (diagnostics), amended results, a refused cancel.
+- `patient_pseudonym` is stored in `fact_order` (a later phase may count patients) but no page or endpoint shows it.
+
+**Other repositories — to do locally, not done:**
+
+1. ClinicHub: tick the README item "Clinic operations dashboard". The Operations page is open to every `dashboard.view`
+   user of the clinic and to `group.view`.
+2. RabbitMQ: a real account for Analytics (the development `guest` only works from the same host). Done on the
+   development broker (IntegrationHub's `compose.yml`), see [The RabbitMQ account](#the-rabbitmq-account) below.
+3. IntegrationHub must be running with `HUB_EVENTS_ENABLED=true` for any events to exist; until Analytics first starts
+   the hub's own declared queue keeps what is published.
+
+#### The RabbitMQ account
+
+`analytics consume` only checks that the exchange exists (passive declare): the exchange is IntegrationHub's, so
+Analytics needs no configure permission on it. It declares its queue and binds it, and **binding is a write on the
+queue**, so the account needs write there too (tested: without it the broker refuses the binding with 403).
+
+```bash
+docker compose exec rabbitmq rabbitmqctl add_user analytics '<password>'
+docker compose exec rabbitmq rabbitmqctl set_permissions -p / analytics \
+  '^analytics\.clinical-events$' '^analytics\.clinical-events$' '^(analytics\.clinical-events|clinical\.events)$'
+```
+
+(configure, write, read). Then `ANALYTICS_RABBITMQ_URL=amqp://analytics:<password>@<broker>:5672/`. The exchange
+appears when the hub publishes its first event; before that the consumer says so and stops (`--drain`) or retries.
+IntegrationHub in a container needs an account of its own for the same reason (configure and write on both, read on
+the exchange). Also found: on Windows `fsync` of a read-only handle fails, so no batch could be written there; fixed.
+
 ### Phase 5 — Forecasts and anomalies
 
 - **Revenue forecast** per business and line of business, monthly, 6 months ahead: seasonal-naive baseline,
@@ -131,11 +334,172 @@ Depends on IntegrationHub phase 3 (the `clinical.events` feed, schema in its `do
   flagged on the OHIP page with the numbers behind the flag.
 - A model card per model in `docs/models/` (data, period, metrics, limits). No model on patient-level data.
 
+**Built:**
+
+- `analytics score` (`scoring.py`): reads the built marts, writes schema `ml` and keeps every run (`ml.run`,
+  `ml.forecast_series`, `ml.backtest`, `ml.forecast`, `ml.remittance_score`). Only complete months: the month of the
+  latest finance extract may not be finished, so the data ends the month before. `analytics run` (phase 6) will chain
+  extract, build and score.
+- **Revenue forecast** (`forecast.py`, card [docs/models/revenue-forecast.md](models/revenue-forecast.md)): per
+  business and line of business, six months ahead. Candidates seasonal naive (the baseline), ETS (damped trend,
+  season from 24 months), SARIMA(0,1,1)(0,1,1)12 from 30 months, gradient boosting on lags and calendar features from
+  24 months. Rolling-origin backtest over the latest six origins with a six-month horizon; MAE, MAPE and MASE per run
+  in `ml.backtest`; the lowest MASE wins, the baseline unless another model is strictly better. A series needs 18
+  complete months; a shorter one is listed as too short, with no forecast. The band is the 80th percentile of the
+  chosen model's backtest errors, said on the page to be rough, not a probability.
+- **Remittance anomalies** (`anomalies.py`, card [docs/models/remittance-anomalies.md](models/remittance-anomalies.md)):
+  short-paid and refused rate per provider and month against the provider's own **earlier** months (robust z-score,
+  MAD, at least six months of history). Flagged when z is 3.5 or more, the rate at least 2 points above the usual one
+  and at least $500 billed; only a higher rate. Lines without a billing number are not scored.
+- API: `GET /api/models/revenue-forecast` (`analytics:models.view` **and** the usual business scope: a clinic's
+  user sees their clinic's series); `GET /api/finance/ohip-anomalies` (the OHIP page's scope, `from`, `to`,
+  `business`). Both answer empty before the first run.
+- Web: a **Forecast** page (in the menu only with `models.view`): the series picker, revenue and the six months
+  ahead with the band (dashed forecast line, also in the legend), tiles, every model's backtest, the series that are
+  too short and why, a table twin and CSV for each. The period presets are hidden there. The **OHIP** page lists
+  "Unusual months" with the rate, the usual rate, the amount, z and the months of history, or says how a month would
+  be flagged. The line chart can now draw a dashed series and a band.
+- Tests: 21 for the models and the rules, 7 for `score` (on a hand-built warehouse with four years of synthetic
+  revenue, and on the marts dbt builds), 5 for the API (permission, scope, the numbers, before the first run);
+  10 in Vitest; 2 in the browser.
+
+**Not built or not known, said plainly:**
+
+- **Not run on real books.** FinancePowerApp holds October 2026 only, the month of the extract, so on this machine
+  `analytics score` finds no complete month: no series, no forecast, no anomaly. Nothing has been checked against real
+  revenue or remittances; the thresholds are conventional starting points.
+- The forecast chart with a real forecast is covered by Vitest only: the browser test's data (two months) is too short,
+  so in the browser only the "too short" path is seen.
+- No reconciliation of the businesses' forecasts to a group total; no holidays or fee-schedule changes as inputs.
+- Nothing schedules `analytics score` (phase 6).
+
 ### Phase 6 — Operations of the service
 
 - `analytics run` = extract + build + score, scheduled (cron in the container, or the platform's scheduler).
 - Data-quality report after each run (row counts vs last run, failed dbt tests) at `GET /api/meta/runs`.
 - Join the platform compose (ControlPanel); Docker image built in CI.
+
+**Built:**
+
+- `analytics run` (`pipeline.py`): prepare, extract (skipped, and said so, without
+  `ANALYTICS_FINANCE_CONNECTION_STRING`), build, score, replace. The live warehouse is **never built in place**: the run
+  copies it to `data/next/warehouse.duckdb` (same file name: dbt-duckdb names the database after it), works there and
+  replaces the live file only when every step worked, so the dashboard keeps the last good data during and after a
+  failed run, and the API's reads never meet dbt's writes. A step that fails stops the run with its exception type and
+  first line (never a connection string). Exit code 1 for a failed run.
+- `analytics schedule [--every 6h]` (`ANALYTICS_RUN_EVERY`, e.g. 30m, 6h, 1d): a run now and then every interval from
+  the start of the previous one; a broken run does not end it; stops on Ctrl+C or SIGTERM (a container's stop). A loop
+  in the process rather than cron: the image needs nothing more, and the platform restarts it.
+- **Data-quality report** per run, a JSON file in `data/runs/` (outside the warehouse, so a failed run is reported too):
+  the steps with their time and result, the row count of every `raw` and `main` table against the last run that
+  replaced the warehouse, the dbt tests and models that did not pass (from dbt's `run_results.json`, cleared before each
+  build so an old file is never read), and checks: a failed test or model is an error, a table that emptied or lost more
+  than 20% of at least 10 rows is a warning, a failed step is an error. Status `ok`, `warning` (replaced, with
+  warnings) or `failed` (not replaced).
+- `GET /api/meta/runs?limit=20` (1-200): the reports, newest first; the whole warehouse, so `group.view` only.
+- The API answers 503 "being updated" when it cannot open the warehouse because another process writes it.
+- Images: `Dockerfile` (API; the same image runs `analytics schedule` and `analytics consume`; commands from the
+  environment directly, `uv run` re-synced at every start) and **`web/Dockerfile`** (the Vite build behind nginx, which
+  proxies `/api` to `ANALYTICS_API_URL`, so the page calls its own origin; header buffers raised because on localhost
+  the browser sends ClinicHub's cookies to every port). Both built in CI (job `images`).
+- **ControlPanel** (`compose.apps.yml` there): `analytics-api`, `analytics-scheduler`, `analytics-web` and, with
+  `--profile events`, `analytics-consumer`, sharing the `analytics-data` volume; web on 127.0.0.1:5601. Seen working on
+  this machine: the dashboard signed in through ClinicHub on the host, a run in the scheduler's container built,
+  scored and swapped the warehouse in, and `/api/meta/runs` listed it with the failed runs before it.
+- Tests: 13 (a run end to end on the synthetic source twice, the comparison with the last good run, a failed run keeping
+  the warehouse, the skipped extract, nothing extracted ever, the checks, dbt's results, the endpoint and its
+  permission, the API while another process holds the warehouse, intervals, the commands, the schedule surviving a
+  broken run).
+
+**Not built or not known, said plainly:**
+
+- **Extract in ControlPanel (21 Oct 2026):** FinancePowerApp's `analytics_reader` login now exists on the development SQL Server (`database/tools/analytics_reader.sql` there, run with a generated password kept only in ControlPanel's `.env`). The scheduler's run built, tested (56 dbt checks) and swapped in a warehouse from 12 tables / 189 rows; the login reads the tables but is refused `org.Party.Email`. Not done for any other server.
+- **Alert on a failed run (`alerts.py`, 21 Oct 2026):** with `ANALYTICS_ALERT_WEBHOOK_URL` set, the first failed run is
+  sent as a JSON POST (`text`, `state`, `runId`, `failedSteps`, `errors`), a run that keeps failing is sent again after
+  `ANALYTICS_ALERT_REPEAT_HOURS` (24), and the first good run after a told failure says it works again. What was told
+  is kept in the run's report (`alert`), so there is no other state; a webhook that is down is tried again by the next
+  run, and a failed POST never fails the run. The URL is never logged. Tested with a stand-in webhook; **not tried
+  against a real chat tool or receiver**, and there is no e-mail.
+- **Old data (`retention.py`, `analytics prune [--dry-run]`, also the last step of every run):** finance extracts older
+  than `ANALYTICS_KEEP_EXTRACT_DAYS` (14) keep only the last complete one of each day, which is what the open-item
+  history is built from, so the history loses nothing; partial extracts past the window go too. Reports: the newest
+  `ANALYTICS_KEEP_REPORTS` (200) and always the last one that replaced the warehouse. 0 keeps everything. Within the
+  window every extract stays. Not pruned: the event files, `data/dbt/logs`, `meta.load_run` rows.
+- **Runs page** (`web/src/pages/Runs.tsx`, `/runs`, group permission only): the latest run's status, when the dashboard's
+  data is from, the last 50 runs, and the steps, checks and tables of the latest, each with CSV. Tested with a mocked API
+  (4 tests); seen in the browser on 21 Oct 2026 after the ControlPanel images were rebuilt (signed in through ClinicHub
+  as the demo administrator; the runs, the `prune` step and the table changes as listed).
+- **Consumer in ControlPanel (21 Oct 2026):** runs with `--profile events` and its own RabbitMQ account `analytics`
+  (permissions as in [The RabbitMQ account](#the-rabbitmq-account), commands in ControlPanel's `.env.example`). It took
+  the events the real applications made through IntegrationHub that day, and the next run built them into `fact_order`.
+
+#### Reconciliation with FinancePowerApp's own reports
+
+`reconcile.py`, a `reconcile` step after every build that read the books in the same run (skipped otherwise), and
+`analytics reconcile` for the live warehouse. FinancePowerApp is asked for its own totals and they are compared figure
+by figure (to the cent) with the marts:
+
+| Figure | FinancePowerApp | Analytics |
+|---|---|---|
+| Revenue per business and posting month | `gl.vw_PeriodMovement` on `Revenue` accounts, credits minus debits | `mart_revenue_monthly` |
+| HST collected, ITCs per business and month | `tax.vw_HstReturn` lines 103 and 106 | `mart_hst_period` (`tax_collected`, `itc`) |
+| Owed to / by each business | `ar.Item` / `ap.Item` `Balance` | latest `fact_open_item_snapshot` |
+
+A figure on one side only counts as zero on the other. A difference is a **warning** (status `warning`, check kind
+`reconcile`, on the Runs page): the books can move in the seconds between the extract and these queries. A
+reconciliation that cannot run (the login refused, the server gone) is an error check; the data still goes in.
+
+- The two views are the only ones `analytics_reader` may read: the others carry text, and ownership chaining would
+  let them past the column DENYs (FinancePowerApp's `database/tools/analytics_reader.sql`, fixed 21 Oct 2026).
+- **Run against the real books (21 Oct 2026):** 21 figures. The first comparison found 2 differences (Harbourview's
+  October revenue and receivables, business 2: 138.00 against 100.05); they were a visit signed in ClinicHub after the
+  last run (37.95). After the next run: 21 compared, 0 differ.
+- Tests: 5 (the synthetic books agree; books that moved after the extract give exactly the two warnings; a refused
+  reconciliation is an error and the warehouse is still replaced; skipped without books; one-sided figures).
+- Not compared: the income statement's expense side, the balance sheet, OHIP collection by provider (FinancePowerApp
+  has no such report), and anything per party.
+
+#### Days to pay
+
+Built 21 Oct 2026 from the receipts FinancePowerApp posted (sources.md, question 6): its `ar.vw_ItemPayments`
+(`database/060_item_payments.sql`, item, date and amount only) is an **optional** source table (`OPTIONAL_TABLES`): read
+when the source has it, skipped when it does not (an older FinancePowerApp), never part of "a complete extract", so every
+earlier extract stays complete and the open-item history is not touched. `mart_days_to_pay` is, per business, payer type
+and payment month, the number of payments, the amount, the mean days from the item date weighted by the amount, and the
+longest wait (a payment dated before its item counts as 0 days). `GET /api/finance/days-to-pay?payer=&from=&to=`, and a
+"Days to pay" card on the OHIP page. **Seen with the real books:** the two receipts there (both patients, paid the day
+they were billed) give 0 days; there is **no OHIP remittance in the books yet**, so the OHIP card stays empty until one
+is posted against a claim. Tests: 4 (the weighting, the API, a source without the view, an extract from before it).
+
+#### Trial balance
+
+The reconciliation also compares, per business and account, debits minus credits of every posted entry with
+`gl.vw_PeriodMovement`: `trial_balance {account number}`. Against the real books: 44 figures compared, 0 differ.
+
+#### LabFlow's warehouse (lab volumes)
+
+Phase 4's optional second source, built on 21 Oct 2026 (`labflow_dw.py`, a `labflow` step after the finance extract,
+`mart_lab_volume_monthly`, `GET /api/operations/lab-volumes?groupBy=month|test|payer`, two cards on the Operations page
+for group users).
+
+- **Only monthly totals leave LabFlow.** Its `dw` holds the legacy lab's results row by row, with free-text values and
+  the legacy visit number (a key back into the old system). LabFlow's new view `dw.vw_AnalyticsMonthly`
+  (`database/054_analytics_dw_view.sql` there, applied at its start-up) counts results, visits, answered, abnormal and
+  critical results and sums turnaround days per month, test and kind of payer; the login `analytics_dw_reader`
+  (`database/tools/analytics_dw_reader.sql`, run on the development server 21 Oct 2026) may read that view and six
+  columns of `dw.DimTest` (key, LOINC, LabFlow code, name, section, panel) and nothing else. Checked with the login:
+  legacy names, values, payer names and the patient tables are refused.
+- **Months are shifted.** LabFlow's ETL shifts every `dw` date by a secret 1–180 days either way, so the months are
+  approximate; the cards say so and are not filtered by the dashboard's months.
+- Each extract replaces the last (`data/raw/labflow_dw/`, no history). Without the setting the step is skipped and the
+  mart is empty (the cards are hidden). If the step fails, the last extract is built again and the run goes on (a
+  failed step is an error check; the warehouse is still replaced).
+- **Seen with the real LabFlow (21 Oct 2026):** 1,882 rows (monthly totals and the test catalogue's six columns) for
+  8,037 results, in ControlPanel's scheduler; the cards on the Operations page in the browser.
+- Tests: 6 Python (columns taken, the mart, the three groupings, refusal for a clinic user, empty without the source,
+  a failure that does not stop the run) and 3 web.
+- Not built: lab volumes from LabFlow's own live tables (only the legacy warehouse), small-number suppression (a
+  month/test cell can be 1), and any link between the legacy history and the platform's events.
 
 ## Not in scope
 

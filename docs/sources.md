@@ -26,12 +26,27 @@ What Analytics reads, as known on 2026-10-17.
 
 ## IntegrationHub events (phase 4)
 
-RabbitMQ exchange `clinical.events`, de-identified. Schema is owned by IntegrationHub (`docs/events.md` there).
+RabbitMQ exchange `clinical.events`, de-identified. Schema is owned by IntegrationHub (`docs/events.md` there); this
+is how Analytics reads it.
 
-## LabFlow dw (optional, phase 4)
+- Kept: `order.placed`, `order.accepted`, `order.cancelled`, `order.cancel-refused`, `result.final`, `result.amended`.
+  Ignored: `finance.document`. Refused (reason code only): anything that does not match the contract's shapes or has a
+  `schemaVersion` other than 1.
+- Columns of `raw.clinical_event`: event id, schema version, type, occurred at (UTC), clinic slug, application, order id,
+  test code system and code, priority, status, patient pseudonym, received at. Nothing else is stored.
+- Department: `labflow` is Lab and `clinicreport` is Diagnostics; any other application keeps its name.
+- Questions: (1) Are `labflow` and `clinicreport` the only applications that receive orders? [Yes.] (2) Should a test
+  code be shown with a name? [No names exist in the events; the page shows codes. A code-to-name table would have to
+  come from LabFlow's test catalogue and ClinicReport's templates.] (3) Is the hub's `occurredAt` (when it relayed the
+  call) good enough as the time of an order and of a result? [Yes; the lab's own clocks are not in the events.]
+
+## LabFlow dw (optional, phase 4; read since phase 6)
 
 LabFlow's `dw` schema (`DimDate`, `DimTest`, `DimPayer`, `DimPatient` with hashed ids, `FactLabResult`), built by its
-SSIS ETL from the legacy lab system. Already de-identified.
+SSIS ETL from the legacy lab system. Already de-identified (hashed patients, dates shifted). Analytics reads only
+`dw.vw_AnalyticsMonthly` (`Year`, `Month`, `TestKey`, `PayerType`, `Results`, `Visits`, `Answered`, `Abnormal`,
+`Critical`, `TurnaroundDaysSum`, `TurnaroundCount`) and `dw.DimTest (TestKey, LoincCode, LabFlowCode, TestName,
+Section, IsPanel)`, through the login `analytics_dw_reader`; see architecture.md, phase 6.
 
 ### Columns not to extract
 
@@ -188,3 +203,68 @@ CREATE TABLE dbo.AccountingPeriods (
     ClosedDate datetime NULL
 );
 ```
+
+## Open questions for FinancePowerApp (answer here, from the repository; phase 1 assumed the answer in brackets)
+
+1. What is the `org.EntitySource.Source` value for ClinicHub's clinics? [`clinichub`, compared case-insensitively;
+   it gives `dim_business.clinic_slug`.]
+2. When an entry is reversed, is the original entry set to `Reversed` and the reversal entry `Posted`? [Yes: both are
+   kept in `fact_gl_line` and net to zero; only `Draft` is left out.]
+3. Do the lines of `Adjustment.Refused` / `Adjustment.ShortPaid` carry the payer's `PartyId` (OHIP)? [Yes:
+   `mart_ohip_collection` counts only lines whose party is of type OHIP. If they do not, refused and short-paid show 0.]
+4. Are those adjustments posted to the accounts that `gl.CategoryMap` maps for those categories, and are those
+   revenue-type accounts (contra-revenue)? [Yes: they then reduce `mart_revenue_monthly`, which is the stated meaning.]
+5. Is `Department` always set on revenue lines? [Used as the line of business; `Unassigned` when empty.]
+6. **Answered (21 Oct 2026): yes, in the receipts.** `ar.Item` has no payment date, but each posted Receipt document
+   (`integ.Document`) names, line by line, the reference it settles (`appliesTo`, else its own reference) and has a date.
+   FinancePowerApp's `database/060_item_payments.sql` makes `ar.vw_ItemPayments` (item, date, amount; no text) from them,
+   and the read-only login may read that view and nothing else of the inbox. Days to pay is `mart_days_to_pay`.
+7. **Answered in a different way (21 Oct 2026):** instead of calling `/api/reports/trial-balance` (it needs a token and
+   its answer is not recorded), every run compares each business's and account's debits minus credits with
+   FinancePowerApp's `gl.vw_PeriodMovement`, the view its trial balance is built from (`trial_balance {account}`
+   figures in the reconciliation). The API's own rounding and its date handling are not compared.
+
+## ClinicHub tokens (phase 2)
+
+Issuer `http://localhost:5301/`, keys at `{issuer}.well-known/jwks` (same as IntegrationHub's contracts). Questions;
+phase 2 assumed the answer in brackets. Check with the payload of a real token for a user signed in to the `analytics`
+client (the part between the dots, base64url, without the signature).
+
+1. Signing algorithm. [`RS256`]
+2. Claim `permission`: a JSON array when a user has several, a string when one; values like `analytics:dashboard.view`.
+   [Either is read.]
+3. Claim `clinic_slug`: present for a clinic user, with the same value as `org.EntitySource.SourceKey` of the ClinicHub
+   source (e.g. `harbourview`). [Yes; the match is case-insensitive.] What does a group user (several clinics) get?
+   [Nothing needed: `group.view` does not look at it.]
+4. Claim `name`: the display name. [Used only for `/api/me`.]
+5. `aud` of an access token for the `analytics` client. [Unknown: not checked until `ANALYTICS_OIDC_AUDIENCE` is set.]
+
+**Answered by a real token** (2026-10-18, ClinicHub `c71b3bd`, a physician and the administrator at Harbourview), header
+and payload without the signature, values shortened:
+
+```json
+{"alg": "RS256", "typ": "at+jwt"}
+{"iss": "http://localhost:5301/", "client_id": "analytics", "sub": "…", "name": "Dr. Nadia Patel",
+ "clinic_slug": "harbourview", "permission": "dashboard.view", "exp": …}
+```
+
+1. `RS256`, `typ: at+jwt`. 2. A string for one, an array for several, and **without the prefix** (`dashboard.view`,
+`group.view`, `models.view`): ClinicHub gives each application its own keys that way. Both forms are read.
+3. `clinic_slug` is there for every user, the administrator's included (the clinic they chose). 4. `name` is the display
+name. 5. **No `aud`**: leave `ANALYTICS_OIDC_AUDIENCE` empty; `client_id` is `analytics`.
+
+## Questions from phase 3 (the dashboard)
+
+Phase 3 assumed the answer in brackets.
+
+1. HST: the accounts of subtype `TaxPayable` hold the HST collected and `TaxRecoverable` the ITCs, and the tax lines
+   carry the same `TaxCode` as the line they tax. [Yes. A tax line without a code shows as "(none)".]
+2. Which lines make up each GST34 line (101, 103, 106, …), and is the filing period a month or a quarter? [Not
+   mapped: the page shows sales and purchases by tax code and the two tax totals, by month or quarter.] A recorded
+   answer of FinancePowerApp's `/api/reports/hst` for a period is needed to compare.
+3. OHIP billed by provider: the revenue accounts mapped to `OHIP.Professional`, `OHIP.Technical` and
+   `OHIP.Reciprocal` (gl.CategoryMap) carry the provider's billing number in `ProviderCode`. [Yes; lines without one
+   are "none".] And the `Adjustment.*` lines carry the provider too? [Not in the test data: they show under "none".]
+4. Is a month with receivables but no revenue possible (it would not give the dashboard a "latest month")? [The latest
+   month with revenue is taken as the latest month with data.]
+

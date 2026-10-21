@@ -10,3 +10,6 @@ web/dist/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+dbt/.user.yml
+web/test-results/
+web/playwright-report/

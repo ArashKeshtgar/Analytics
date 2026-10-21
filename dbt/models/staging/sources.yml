@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: Parquet extracts of FinancePowerApp, loaded by `analytics build`.
+    tables:
+      - name: org_entity
+      - name: org_entitysource
+      - name: org_party
+      - name: tax_taxcode
+      - name: gl_account
+      - name: gl_journalentry
+      - name: gl_journalline
+      - name: gl_categorymap
+      - name: gl_controlmap
+      - name: ar_item
+      - name: ap_item
+      - name: dbo_accountingperiods
+      - name: ar_vw_itempayments
+        description: When each receivable item was paid (FinancePowerApp's ar.vw_ItemPayments); empty when the source has no such view.
+      - name: ar_item_history
+      - name: ap_item_history
+      - name: clinical_event
+        description: De-identified events from IntegrationHub (data/raw/events/*.parquet), one row per event id.
+      - name: dw_vw_analyticsmonthly
+        description: LabFlow warehouse totals per month, test and kind of payer (data/raw/labflow_dw/); empty when not read.
+      - name: dw_dimtest
+        description: LabFlow warehouse test catalogue (key, codes, name); empty when not read.
