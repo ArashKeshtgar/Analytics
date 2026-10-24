@@ -3,11 +3,21 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Docker secrets: one file per setting, named like its variable
+# (ANALYTICS_FINANCE_CONNECTION_STRING). The environment and `.env` win over them; none outside
+# a container.
+SECRETS_DIR = Path("/run/secrets")
+
 
 class Settings(BaseSettings):
-    """Every setting, read from the environment or `.env`. Mirrors `.env.example`."""
+    """Every setting, read from the environment, `.env` or a secret file. Mirrors `.env.example`."""
 
-    model_config = SettingsConfigDict(env_prefix="ANALYTICS_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="ANALYTICS_",
+        env_file=".env",
+        extra="ignore",
+        secrets_dir=SECRETS_DIR if SECRETS_DIR.is_dir() else None,
+    )
 
     host: str = "127.0.0.1"
     port: int = 5600
